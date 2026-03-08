@@ -6,6 +6,22 @@
 </section>
 
 <section class="card">
+  <h2>Darstellung</h2>
+  <form method="post" class="form-grid two-columns">
+    <input type="hidden" name="action" value="theme">
+    <label>Modus
+      <select name="theme_mode" required>
+        <option value="light" {{ 'selected' if user['theme_mode'] == 'light' else '' }}>Standard</option>
+        <option value="dark" {{ 'selected' if user['theme_mode'] == 'dark' else '' }}>Dark</option>
+      </select>
+    </label>
+    <div class="actions-row">
+      <button type="submit">Modus speichern</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
   <h2>Passwort ändern</h2>
   <form method="post" class="form-grid two-columns">
     <input type="hidden" name="action" value="password">
@@ -85,15 +101,21 @@
     <label>Farbe Rolle Admin
       <input type="color" name="role_color_admin" value="{{ settings['role_color_admin'] }}" required>
     </label>
-    <label>Farbe Rolle Systemintegrator
-      <input type="color" name="role_color_system" value="{{ settings['role_color_system'] }}" required>
+
+    {% for role_field in builtin_role_color_fields %}
+    <label>Farbe Rolle {{ role_field['label'] }}
+      <input type="color" name="{{ role_field['setting_key'] }}" value="{{ role_field['value'] }}" required>
     </label>
-    <label>Farbe Rolle Anwendungsentwickler
-      <input type="color" name="role_color_dev" value="{{ settings['role_color_dev'] }}" required>
+    {% endfor %}
+
+    {% if custom_roles %}
+    <h3 class="full">Eigene Rollenfarben</h3>
+    {% for role in custom_roles %}
+    <label>Farbe Rolle {{ role['label'] }}
+      <input type="color" name="custom_role_color_{{ role['role_key'] }}" value="{{ role['color'] }}" required>
     </label>
-    <label>Farbe Rolle Team
-      <input type="color" name="role_color_team" value="{{ settings['role_color_team'] }}" required>
-    </label>
+    {% endfor %}
+    {% endif %}
 
     <label>Ton bei neuer Task
       <select name="new_task_tone" required>

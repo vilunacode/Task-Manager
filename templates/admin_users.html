@@ -19,10 +19,9 @@
     </label>
     <label>Rolle
       <select name="role" required>
-        <option value="admin">Admin</option>
-        <option value="team">Team</option>
-        <option value="application_developer">Anwendungsentwickler</option>
-        <option value="system_integrator">Systemintegrator</option>
+        {% for role_opt in role_options %}
+        <option value="{{ role_opt['value'] }}">{{ role_opt['label'] }}</option>
+        {% endfor %}
       </select>
     </label>
     <div class="actions-row">
@@ -49,9 +48,9 @@
         <tr>
           <td>{{ account['username'] }}</td>
           <td>
-            <span class="initial-badge {{ 'badge-admin' if account['is_admin'] else ('badge-system' if account['role'] == 'system_integrator' else ('badge-team' if account['role'] == 'team' else 'badge-dev')) }}">{{ account['initials'] }}</span>
+            <span class="initial-badge {{ account['color_class'] }}">{{ account['initials'] }}</span>
           </td>
-          <td>{{ 'Admin' if account['is_admin'] else ('Systemintegrator' if account['role'] == 'system_integrator' else ('Team' if account['role'] == 'team' else 'Anwendungsentwickler')) }}</td>
+          <td>{{ account['role_label'] }}</td>
           <td>
             <button
               type="button"
@@ -80,10 +79,9 @@
                 </label>
                 <label>Rolle
                   <select name="role" required>
-                    <option value="admin" {{ 'selected' if account['is_admin'] else '' }}>Admin</option>
-                    <option value="team" {{ 'selected' if (not account['is_admin'] and account['role'] == 'team') else '' }}>Team</option>
-                    <option value="application_developer" {{ 'selected' if (not account['is_admin'] and account['role'] == 'application_developer') else '' }}>Anwendungsentwickler</option>
-                    <option value="system_integrator" {{ 'selected' if (not account['is_admin'] and account['role'] == 'system_integrator') else '' }}>Systemintegrator</option>
+                    {% for role_opt in role_options %}
+                    <option value="{{ role_opt['value'] }}" {{ 'selected' if ((role_opt['value'] == 'admin' and account['is_admin']) or (not account['is_admin'] and role_opt['value'] == account['role'])) else '' }}>{{ role_opt['label'] }}</option>
+                    {% endfor %}
                   </select>
                 </label>
                 <div class="actions-row">
@@ -108,5 +106,49 @@
       </tbody>
     </table>
   </div>
+</section>
+
+<section class="card">
+  <h2>Rollenverwaltung</h2>
+  <form method="post" class="form-grid two-columns">
+    <input type="hidden" name="action" value="create-role">
+    <label>Neue Rolle erstellen
+      <input type="text" name="role_label" placeholder="z. B. Projektleiter" required>
+    </label>
+    <div class="actions-row">
+      <button type="submit" class="secondary">Rolle erstellen</button>
+    </div>
+  </form>
+
+  {% if role_management_entries %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Rolle</th>
+          <th>Typ</th>
+          <th>Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for role_entry in role_management_entries %}
+        <tr>
+          <td>{{ role_entry['label'] }}</td>
+          <td>{{ 'Standard' if role_entry['is_builtin'] else 'Benutzerdefiniert' }}</td>
+          <td>
+            <form method="post" onsubmit="return confirm('Rolle wirklich entfernen?');">
+              <input type="hidden" name="action" value="delete-role">
+              <input type="hidden" name="role_key" value="{{ role_entry['role_key'] }}">
+              <button type="submit" class="danger">Rolle entfernen</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">Keine löschbaren Rollen vorhanden.</p>
+  {% endif %}
 </section>
 {% endblock %}

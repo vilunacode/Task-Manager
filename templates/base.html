@@ -25,10 +25,15 @@
       --overview-task-card-width: {{ app_settings['overview_task_width_px'] if app_settings else '220' }}px;
       --overview-task-card-min-height: {{ app_settings['overview_task_min_height_px'] if app_settings else '94' }}px;
     }
+    {% for rule in custom_role_css_rules %}
+    .{{ rule['class_name'] }} {
+      background: {{ rule['color'] }};
+    }
+    {% endfor %}
   </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
-<body>
+<body data-theme="{{ user['theme_mode'] if user and user['theme_mode'] in ('light', 'dark') else 'light' }}">
   <div class="bg-pattern"></div>
   <header class="topbar">
     <div class="container topbar-inner">
@@ -73,7 +78,14 @@
         <h3>Das Team</h3>
         <div class="user-badge-list">
           {% for member in sidebar_users %}
-          <div class="user-badge-item" title="{{ member['username'] }} ({{ member['role_label'] }})">
+          <div
+            class="user-badge-item sidebar-draggable-member"
+            title="{{ member['username'] }} ({{ member['role_label'] }})"
+            data-user-id="{{ member['id'] }}"
+            data-username="{{ member['username'] }}"
+            draggable="true"
+          >
+            <span class="user-task-score" title="Zugewiesene Tasks">{{ member['assigned_task_count'] }}</span>
             <span class="initial-badge {{ member['color_class'] }}">{{ member['initials'] }}</span>
             <span class="muted">{{ member['username'] }}</span>
           </div>

@@ -25,13 +25,15 @@
       {% if tasks %}
         {% for task in tasks %}
         {% set assigned_to_me = (task['assignees'] | selectattr('id', 'equalto', user['id']) | list | length > 0) %}
-        {% set due_today = assigned_to_me and is_due_today(task['due_date']) %}
+        {% set due_today = is_due_today(task['due_date']) %}
         {% set can_write_task = user['is_admin'] or task['created_by'] == user['id'] or task['id'] in editable_task_ids %}
+        {% set can_assign_members = user['is_admin'] or task['created_by'] == user['id'] %}
         {% set task_read_only = task['status'] == 'closed' or not can_write_task %}
         <div
-          class="task-card {{ 'task-assigned-to-me' if assigned_to_me else '' }} {{ 'task-due-today' if due_today else '' }} {{ 'draggable-task' if (user['is_admin'] or task['id'] in editable_task_ids) else '' }}"
+          class="task-card {{ 'task-assigned-to-me' if assigned_to_me else '' }} {{ 'task-due-today' if due_today else '' }} {{ 'draggable-task' if (user['is_admin'] or task['id'] in editable_task_ids) else '' }} {{ 'assignee-drop-enabled' if (task['status'] != 'closed' and can_assign_members) else '' }}"
           data-task-id="{{ task['id'] }}"
           data-current-status="{{ status }}"
+          data-can-assign="{{ 'true' if (task['status'] != 'closed' and can_assign_members) else 'false' }}"
           draggable="{{ 'true' if (user['is_admin'] or task['id'] in editable_task_ids) else 'false' }}"
         >
           <strong>{{ task['title'] }}</strong>
@@ -83,29 +85,32 @@
 </section>
 
 <dialog id="create-task-dialog" class="task-dialog">
-  <form method="post" action="{{ url_for('create_task') }}" class="form-grid two-columns">
+  <form method="post" action="{{ url_for('create_task') }}" class="form-grid two-columns task-edit-form">
     <div class="dialog-head full">
       <h2>Neue Task erstellen</h2>
       <button type="button" class="link-btn" id="close-create-task">Schließen</button>
     </div>
-    <label>Titel
+    <label class="field-compact">Titel
       <input type="text" name="title" required>
     </label>
-    <label>Wer soll es bearbeiten?
-      <select name="assignee_ids" multiple size="6" required>
+    <label class="field-compact">Bearbeiter
+      <select name="assignee_ids" multiple size="1" class="compact-multi">
         {% for person in users %}
         <option value="{{ person['id'] }}">{{ person['initials'] }} - {{ person['username'] }}</option>
         {% endfor %}
       </select>
-      <small class="muted">Mehrfachauswahl: Strg/Cmd gedrückt halten.</small>
     </label>
-    <label class="full">Worum geht es?
-      <textarea name="description" rows="3" required></textarea>
+    <small class="muted full">Mehrfachauswahl: Strg/Cmd gedrückt halten.</small>
+    <label class="full">Beschreibung
+      <textarea name="description" rows="4" required></textarea>
     </label>
-    <label>Fällig bis
-      <input type="datetime-local" name="due_date" required>
+    <label>Fällig am
+      <input type="date" name="due_date" required>
     </label>
-    <label>Ansprechpartner
+    <label>Uhrzeit (optional)
+      <input type="time" name="due_time">
+    </label>
+    <label class="field-compact">Ansprechpartner
       <input type="text" name="contact_person" required>
     </label>
     <div class="actions-row">
@@ -140,7 +145,10 @@
   const closeTaskDialogAbort = document.getElementById("close-task-dialog-abort");
   const draggableTasks = document.querySelectorAll(".draggable-task");
   const dropColumns = document.querySelectorAll(".drop-column");
+  const draggableMembers = document.querySelectorAll(".sidebar-draggable-member");
+  const assigneeDropCards = document.querySelectorAll('.task-card[data-can-assign="true"]');
   let draggedTask = null;
+  let draggedMember = null;
   let pendingCloseTaskId = null;
 
   openBtn.addEventListener("click", () => dialog.showModal());
@@ -201,6 +209,40 @@
     form.submit();
   };
 
+  const submitAddAssignee = (taskId, userId) => {
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = `/tasks/${taskId}/assignees/add`;
+
+    const userInput = document.createElement("input");
+    userInput.type = "hidden";
+    userInput.name = "user_id";
+    userInput.value = userId;
+
+    const filterInput = document.createElement("input");
+    filterInput.type = "hidden";
+    filterInput.name = "return_filter";
+    filterInput.value = "{{ filter_mode }}";
+
+    form.appendChild(userInput);
+    form.appendChild(filterInput);
+    document.body.appendChild(form);
+    form.submit();
+  };
+
+  draggableMembers.forEach((member) => {
+    member.addEventListener("dragstart", () => {
+      draggedMember = member;
+      member.classList.add("dragging");
+    });
+
+    member.addEventListener("dragend", () => {
+      member.classList.remove("dragging");
+      draggedMember = null;
+      assigneeDropCards.forEach((card) => card.classList.remove("drop-target"));
+    });
+  });
+
   draggableTasks.forEach((task) => {
     task.addEventListener("dragstart", () => {
       draggedTask = task;
@@ -250,6 +292,36 @@
       }
 
       submitStatusChange(taskId, targetStatus);
+    });
+  });
+
+  assigneeDropCards.forEach((card) => {
+    card.addEventListener("dragover", (event) => {
+      if (!draggedMember) {
+        return;
+      }
+      event.preventDefault();
+      card.classList.add("drop-target");
+    });
+
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("drop-target");
+    });
+
+    card.addEventListener("drop", (event) => {
+      event.preventDefault();
+      card.classList.remove("drop-target");
+      if (!draggedMember) {
+        return;
+      }
+
+      const taskId = card.dataset.taskId;
+      const userId = draggedMember.dataset.userId;
+      if (!taskId || !userId) {
+        return;
+      }
+
+      submitAddAssignee(taskId, userId);
     });
   });
 </script>

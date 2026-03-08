@@ -37,7 +37,7 @@
       <input type="text" name="title" value="{{ task['title'] }}" required>
     </label>
     <label class="field-compact">Bearbeiter
-      <select name="assignee_ids" multiple size="1" class="compact-multi" required>
+      <select name="assignee_ids" multiple size="1" class="compact-multi">
         {% set assigned_ids = task['assignees'] | map(attribute='id') | list %}
         {% for person in users %}
         <option value="{{ person['id'] }}" {{ 'selected' if person['id'] in assigned_ids else '' }}>
@@ -50,8 +50,11 @@
     <label class="full">Beschreibung
       <textarea name="description" rows="4" required>{{ task['description'] }}</textarea>
     </label>
-    <label>Fällig bis
-      <input type="datetime-local" name="due_date" value="{{ datetime_input_value(task['due_date']) }}" required>
+    <label>Fällig am
+      <input type="date" name="due_date" value="{{ due_date_input_value(task['due_date']) }}" required>
+    </label>
+    <label>Uhrzeit (optional)
+      <input type="time" name="due_time" value="{{ due_time_input_value(task['due_date']) }}">
     </label>
     <div class="actions-row">
       <button type="submit">Änderungen speichern</button>
