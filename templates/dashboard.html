@@ -10,8 +10,8 @@
 
   <div class="toolbar-row">
     <div class="filter-tabs">
-      <a href="{{ url_for('dashboard', filter='all') }}" class="chip {{ 'active' if filter_mode == 'all' else '' }}">Alle Tickets</a>
-      <a href="{{ url_for('dashboard', filter='mine') }}" class="chip {{ 'active' if filter_mode == 'mine' else '' }}">Meine Tickets</a>
+      <a href="{{ url_for('dashboard', filter='all') }}" class="chip {{ 'active' if filter_mode == 'all' else '' }}">Alle Tasks</a>
+      <a href="{{ url_for('dashboard', filter='mine') }}" class="chip {{ 'active' if filter_mode == 'mine' else '' }}">Meine Tasks</a>
     </div>
     <button type="button" id="open-create-task">Task erstellen</button>
   </div>

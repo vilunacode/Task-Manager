@@ -37,6 +37,7 @@
       <nav class="nav">
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
         <a href="{{ url_for('overview') }}">Übersicht</a>
+        <a href="{{ url_for('calendar_page') }}">Kalender</a>
         <a href="{{ url_for('settings_page') }}">Einstellungen</a>
         {% if user['is_admin'] %}
         <a href="{{ url_for('manage_users') }}">Benutzer</a>
@@ -69,7 +70,7 @@
     {% if user and show_sidebar|default(true) %}
     <div class="app-layout">
       <aside class="user-sidebar card">
-        <h3>Team-Kürzel</h3>
+        <h3>Das Team</h3>
         <div class="user-badge-list">
           {% for member in sidebar_users %}
           <div class="user-badge-item" title="{{ member['username'] }} ({{ member['role_label'] }})">

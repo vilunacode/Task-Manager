@@ -1,7 +1,8 @@
 import os
+import calendar as pycalendar
 import re
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from zoneinfo import ZoneInfo
 
@@ -134,6 +135,18 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS app_settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS calendar_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            notes TEXT NOT NULL DEFAULT '',
+            start_at TEXT NOT NULL,
+            end_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         """
     )
@@ -515,6 +528,204 @@ def fetch_tasks(*, status: str | None = None, only_assigned_to: int | None = Non
     )
 
 
+def parse_int_value(value: str | None) -> int | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    try:
+        return int(cleaned)
+    except ValueError:
+        return None
+
+
+def parse_month_value(raw_value: str | None) -> date:
+    if raw_value:
+        try:
+            parsed = datetime.strptime(raw_value.strip(), "%Y-%m").date()
+            return parsed.replace(day=1)
+        except ValueError:
+            pass
+    today = datetime.now(APP_TIMEZONE).date()
+    return today.replace(day=1)
+
+
+def shift_month(month_start: date, delta_months: int) -> date:
+    base = month_start.year * 12 + (month_start.month - 1) + delta_months
+    year = base // 12
+    month = (base % 12) + 1
+    return date(year, month, 1)
+
+
+def build_month_cells(month_start: date, events: list[dict]):
+    events_by_day = {}
+    for event in events:
+        normalized = normalize_datetime_value(event.get("start_at", ""))
+        if not normalized:
+            continue
+        day_key = normalized[:10]
+        events_by_day.setdefault(day_key, []).append(event)
+
+    for day_events in events_by_day.values():
+        day_events.sort(key=lambda item: item.get("start_at", ""))
+
+    first_weekday, days_in_month = pycalendar.monthrange(month_start.year, month_start.month)
+    first_cell = month_start - timedelta(days=first_weekday)
+
+    cells = []
+    for offset in range(42):
+        day = first_cell + timedelta(days=offset)
+        day_key = day.strftime("%Y-%m-%d")
+        cells.append(
+            {
+                "date": day,
+                "day_key": day_key,
+                "in_month": day.month == month_start.month,
+                "is_today": day == datetime.now(APP_TIMEZONE).date(),
+                "events": events_by_day.get(day_key, []),
+            }
+        )
+
+    return {
+        "month_label": month_start.strftime("%B %Y"),
+        "month_value": month_start.strftime("%Y-%m"),
+        "prev_month": shift_month(month_start, -1).strftime("%Y-%m"),
+        "next_month": shift_month(month_start, 1).strftime("%Y-%m"),
+        "cells": cells,
+        "days_in_month": days_in_month,
+    }
+
+
+def list_all_users_for_filters():
+    return query_all(
+        """
+        SELECT id, username, initials, role, is_admin
+        FROM users
+        ORDER BY is_admin DESC, username ASC
+        """
+    )
+
+
+def calendar_scope_user_ids(user, scope: str, filter_user_id: int | None):
+    all_users = list_all_users_for_filters()
+    all_user_ids = [int(row["id"]) for row in all_users]
+
+    if not user["is_admin"]:
+        return [int(user["id"])], "me", int(user["id"]), all_users
+
+    resolved_scope = scope if scope in {"me", "team"} else "me"
+    if resolved_scope == "me":
+        return [int(user["id"])], resolved_scope, int(user["id"]), all_users
+
+    if filter_user_id is not None and filter_user_id in all_user_ids:
+        return [int(filter_user_id)], resolved_scope, int(filter_user_id), all_users
+
+    return all_user_ids, resolved_scope, None, all_users
+
+
+def calendar_personal_events(user_ids: list[int]):
+    if not user_ids:
+        return []
+
+    placeholders = ",".join(["?"] * len(user_ids))
+    rows = query_all(
+        f"""
+        SELECT
+            ce.id,
+            ce.user_id,
+            ce.title,
+            ce.notes,
+            ce.start_at,
+            ce.end_at,
+            u.username,
+            u.initials,
+            u.role,
+            u.is_admin
+        FROM calendar_events ce
+        JOIN users u ON u.id = ce.user_id
+        WHERE ce.user_id IN ({placeholders})
+        ORDER BY ce.start_at ASC
+        """,
+        tuple(user_ids),
+    )
+
+    events = []
+    for row in rows:
+        owner_initials = row["initials"] or make_initials_from_username(row["username"])
+        events.append(
+            {
+                "kind": "personal",
+                "id": int(row["id"]),
+                "user_id": int(row["user_id"]),
+                "title": row["title"],
+                "notes": row["notes"] or "",
+                "start_at": row["start_at"],
+                "end_at": row["end_at"] or "",
+                "start_display": format_datetime_for_display(row["start_at"]),
+                "end_display": format_datetime_for_display(row["end_at"]) if row["end_at"] else "",
+                "owner_name": row["username"],
+                "owner_initials": owner_initials,
+                "owner_short": owner_initials,
+                "owner_hint": row["username"],
+                "owner_color_class": badge_color_class(row["role"], row["is_admin"]),
+            }
+        )
+    return events
+
+
+def calendar_task_events(user_ids: list[int]):
+    if not user_ids:
+        return []
+
+    tasks = enrich_tasks_with_assignees(fetch_tasks())
+    user_id_set = set(user_ids)
+    events = []
+    for task in tasks:
+        due_date = task.get("due_date")
+        if not due_date:
+            continue
+
+        assignee_ids = {int(a["id"]) for a in task.get("assignees", [])}
+        if not (assignee_ids & user_id_set):
+            continue
+
+        assignees = task.get("assignees", [])
+        assignee_initials = [a["initials"] for a in assignees]
+        owner_short = ", ".join(assignee_initials[:2])
+        if len(assignee_initials) > 2:
+            owner_short = f"{owner_short} +{len(assignee_initials) - 2}"
+        owner_hint = ", ".join([a["username"] for a in assignees]) if assignees else "Nicht zugewiesen"
+
+        events.append(
+            {
+                "kind": "task",
+                "id": int(task["id"]),
+                "title": task["title"],
+                "notes": task.get("description", ""),
+                "start_at": due_date,
+                "end_at": "",
+                "start_display": format_datetime_for_display(due_date),
+                "end_display": "",
+                "status": task["status"],
+                "assignees": assignees,
+                "owner_short": owner_short,
+                "owner_hint": owner_hint,
+            }
+        )
+
+    events.sort(key=lambda event: event["start_at"])
+    return events
+
+
+def calendar_combined_events(user_ids: list[int]):
+    personal = calendar_personal_events(user_ids)
+    task_events = calendar_task_events(user_ids)
+    combined = personal + task_events
+    combined.sort(key=lambda event: event["start_at"])
+    return combined
+
+
 def assigned_task_ids_for_user(user_id: int):
     rows = query_all("SELECT task_id FROM task_assignees WHERE user_id = ?", (user_id,))
     return {row["task_id"] for row in rows}
@@ -767,6 +978,134 @@ def overview_tasks_api():
             }
         )
     return jsonify({"tasks": payload})
+
+
+@app.route("/calendar", methods=["GET", "POST"])
+@login_required
+def calendar_page():
+    user = current_user()
+
+    req_scope = request.args.get("scope", "me").strip().lower()
+    req_filter_user = parse_int_value(request.args.get("user_id"))
+    req_month = request.args.get("month", "").strip()
+    month_start = parse_month_value(req_month)
+
+    scope_user_ids, resolved_scope, resolved_filter_user_id, filter_users = calendar_scope_user_ids(
+        user,
+        req_scope,
+        req_filter_user,
+    )
+
+    if request.method == "POST":
+        action = request.form.get("action", "").strip()
+
+        if action == "create":
+            title = request.form.get("title", "").strip()
+            notes = request.form.get("notes", "").strip()
+            start_at = normalize_datetime_value(request.form.get("start_at", ""))
+            end_at_raw = request.form.get("end_at", "").strip()
+            end_at = normalize_datetime_value(end_at_raw) if end_at_raw else ""
+
+            if not title or not start_at:
+                flash("Titel und Startzeit sind erforderlich.", "error")
+                return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+            if end_at and end_at < start_at:
+                flash("Ende darf nicht vor dem Start liegen.", "error")
+                return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+            now = now_iso()
+            execute(
+                """
+                INSERT INTO calendar_events (user_id, title, notes, start_at, end_at, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (user["id"], title, notes, start_at, end_at or None, now, now),
+            )
+            flash("Termin wurde gespeichert.", "success")
+            return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+        if action == "update":
+            event_id = parse_int_value(request.form.get("event_id"))
+            if event_id is None:
+                flash("Ungültiger Termin.", "error")
+                return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+            event = query_one(
+                "SELECT id, user_id FROM calendar_events WHERE id = ?",
+                (event_id,),
+            )
+            if event is None:
+                flash("Termin nicht gefunden.", "error")
+                return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+            if int(event["user_id"]) != int(user["id"]):
+                flash("Du kannst nur eigene Termine bearbeiten.", "error")
+                return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+            title = request.form.get("title", "").strip()
+            notes = request.form.get("notes", "").strip()
+            start_at = normalize_datetime_value(request.form.get("start_at", ""))
+            end_at_raw = request.form.get("end_at", "").strip()
+            end_at = normalize_datetime_value(end_at_raw) if end_at_raw else ""
+
+            if not title or not start_at:
+                flash("Titel und Startzeit sind erforderlich.", "error")
+                return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+            if end_at and end_at < start_at:
+                flash("Ende darf nicht vor dem Start liegen.", "error")
+                return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+            execute(
+                """
+                UPDATE calendar_events
+                SET title = ?, notes = ?, start_at = ?, end_at = ?, updated_at = ?
+                WHERE id = ? AND user_id = ?
+                """,
+                (title, notes, start_at, end_at or None, now_iso(), event_id, user["id"]),
+            )
+            flash("Termin wurde aktualisiert.", "success")
+            return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+        if action == "delete":
+            event_id = parse_int_value(request.form.get("event_id"))
+            if event_id is None:
+                flash("Ungültiger Termin.", "error")
+                return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+            event = query_one("SELECT id, user_id FROM calendar_events WHERE id = ?", (event_id,))
+            if event is None:
+                flash("Termin nicht gefunden.", "error")
+                return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+            if int(event["user_id"]) != int(user["id"]):
+                flash("Du kannst nur eigene Termine löschen.", "error")
+                return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+            execute("DELETE FROM calendar_events WHERE id = ? AND user_id = ?", (event_id, user["id"]))
+            flash("Termin wurde gelöscht.", "success")
+            return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+        flash("Unbekannte Aktion.", "error")
+        return redirect(url_for("calendar_page", scope=resolved_scope, user_id=resolved_filter_user_id, month=month_start.strftime("%Y-%m")))
+
+    personal_events = calendar_personal_events(scope_user_ids)
+    events = calendar_combined_events(scope_user_ids)
+    own_event_ids = {event["id"] for event in personal_events if int(event["user_id"]) == int(user["id"])}
+    month_grid = build_month_cells(month_start, events)
+
+    return render_template(
+        "calendar.html",
+        user=user,
+        events=events,
+        month_grid=month_grid,
+        own_event_ids=own_event_ids,
+        filter_users=filter_users,
+        scope=resolved_scope,
+        selected_user_id=resolved_filter_user_id,
+        selected_month=month_start.strftime("%Y-%m"),
+    )
 
 
 @app.route("/settings", methods=["GET", "POST"])

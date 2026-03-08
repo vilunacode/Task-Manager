@@ -1,0 +1,394 @@
+{% extends 'base.html' %}
+{% block title %}Kalender | Task Manager{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="section-head">
+    <h1>Kalender</h1>
+    <span class="badge">Kalender-Ansicht</span>
+  </div>
+
+  <div class="calendar-top-controls">
+    <div class="calendar-month-nav">
+      <a class="chip" href="{{ url_for('calendar_page', scope=scope, user_id=selected_user_id, month=month_grid['prev_month']) }}">← Monat zurück</a>
+      <strong>{{ month_grid['month_label'] }}</strong>
+      <a class="chip" href="{{ url_for('calendar_page', scope=scope, user_id=selected_user_id, month=month_grid['next_month']) }}">Monat vor →</a>
+    </div>
+
+    {% if user['is_admin'] %}
+    <form method="get" class="calendar-filter-row">
+      <input type="hidden" name="month" value="{{ selected_month }}">
+      <label>Ansicht
+        <select name="scope" id="calendar-scope-select">
+          <option value="me" {{ 'selected' if scope == 'me' else '' }}>Ich</option>
+          <option value="team" {{ 'selected' if scope == 'team' else '' }}>Team</option>
+        </select>
+      </label>
+      <label>Benutzer
+        <select name="user_id" id="calendar-user-filter" {{ 'disabled' if scope == 'me' else '' }}>
+          <option value="">Alle</option>
+          {% for account in filter_users %}
+          <option value="{{ account['id'] }}" {{ 'selected' if selected_user_id == account['id'] else '' }}>{{ account['username'] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="actions-row">
+        <button type="submit">Filter anwenden</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="visual-calendar">
+    <div class="visual-calendar-weekdays">
+      <div>Mo</div>
+      <div>Di</div>
+      <div>Mi</div>
+      <div>Do</div>
+      <div>Fr</div>
+      <div>Sa</div>
+      <div>So</div>
+    </div>
+
+    <div class="visual-calendar-grid">
+      {% for cell in month_grid['cells'] %}
+      <article
+        class="day-cell {{ '' if cell['in_month'] else 'day-cell-muted' }} {{ 'day-cell-today' if cell['is_today'] else '' }} {{ 'day-cell-has-events' if cell['events'] else '' }}"
+        data-day-dialog-id="{{ 'day-events-dialog-' ~ cell['day_key'] if cell['events'] else '' }}"
+      >
+        <div class="day-cell-head">
+          <span>{{ cell['date'].day }}</span>
+          <button
+            type="button"
+            class="link-btn day-add-btn"
+            data-day="{{ cell['day_key'] }}"
+            title="Termin an diesem Tag erstellen"
+          >+</button>
+        </div>
+
+        <div class="day-events">
+          {% if cell['events'] %}
+            {% for event in cell['events'][:4] %}
+            {% set can_edit_event = event['kind'] == 'personal' and event['id'] in own_event_ids %}
+            <div
+              class="day-event-chip {{ 'chip-task' if event['kind'] == 'task' else 'chip-personal' }} {{ 'chip-editable' if can_edit_event else '' }}"
+              title="{{ event['title'] }}{% if event['owner_hint'] %} | {{ event['owner_hint'] }}{% endif %}"
+              data-kind="{{ event['kind'] }}"
+              data-task-url="{{ url_for('task_detail', task_id=event['id']) if event['kind'] == 'task' else '' }}"
+              data-edit-dialog-id="{{ 'edit-event-dialog-' ~ event['id'] if can_edit_event else '' }}"
+            >
+              <span class="chip-time">{{ event['start_display'][11:16] }}</span>
+              <span class="chip-title">{{ event['title'] }}</span>
+              {% if scope == 'team' and event['owner_short'] %}
+              <span class="chip-owner">{{ event['owner_short'] }}</span>
+              {% endif %}
+            </div>
+            {% endfor %}
+            {% if cell['events']|length > 4 %}
+            <small class="muted">+{{ cell['events']|length - 4 }} weitere</small>
+            {% endif %}
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<dialog id="create-event-dialog" class="task-dialog">
+  <form method="post" class="form-grid two-columns" id="create-calendar-event-form">
+    <div class="dialog-head full">
+      <h2>Termin eintragen</h2>
+      <button type="button" class="link-btn" id="create-event-dialog-close">Schließen</button>
+    </div>
+    <input type="hidden" name="action" value="create">
+    <input type="hidden" name="month" value="{{ selected_month }}">
+    <label>Titel
+      <input type="text" name="title" required>
+    </label>
+    <label>Start
+      <input type="datetime-local" name="start_at" id="calendar-start-input" required>
+    </label>
+    <label>Ende (optional)
+      <input type="datetime-local" name="end_at">
+    </label>
+    <label class="full">Notiz
+      <textarea name="notes" rows="3"></textarea>
+    </label>
+    <div class="actions-row">
+      <button type="submit">Termin speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="calendar-dialogs-hidden" aria-hidden="true">
+  {% for cell in month_grid['cells'] %}
+    {% if cell['events'] %}
+    <dialog id="day-events-dialog-{{ cell['day_key'] }}" class="task-dialog">
+      <div class="dialog-head full">
+        <h2>Einträge am {{ cell['date'].strftime('%d.%m.%Y') }}</h2>
+        <button type="button" class="link-btn" onclick="document.getElementById('day-events-dialog-{{ cell.day_key }}').close()">Schließen</button>
+      </div>
+      <div class="day-dialog-event-list">
+        {% for event in cell['events'] %}
+        <article class="day-dialog-event-item {{ 'task-event' if event['kind'] == 'task' else 'personal-event' }}">
+          <strong>{{ event['title'] }}</strong>
+          <small>Start: {{ event['start_display'] }}</small>
+          {% if event['end_display'] %}<small>Ende: {{ event['end_display'] }}</small>{% endif %}
+          {% if event['owner_hint'] %}<small>Von: {{ event['owner_hint'] }}</small>{% endif %}
+
+          {% if event['kind'] == 'task' %}
+          <a class="chip" href="{{ url_for('task_detail', task_id=event['id']) }}">Task öffnen</a>
+          {% elif event['id'] in own_event_ids %}
+          <button
+            type="button"
+            class="secondary small-btn open-edit-event"
+            data-edit-dialog-id="edit-event-dialog-{{ event.id }}"
+            data-source-day-dialog-id="day-events-dialog-{{ cell['day_key'] }}"
+          >Termin bearbeiten</button>
+          {% endif %}
+        </article>
+        {% endfor %}
+      </div>
+    </dialog>
+    {% endif %}
+  {% endfor %}
+
+  {% for event in events %}
+    {% if event['kind'] == 'personal' and event['id'] in own_event_ids %}
+    <dialog id="edit-event-dialog-{{ event.id }}" class="task-dialog">
+      <form method="post" class="form-grid two-columns">
+        <div class="dialog-head full">
+          <h2>Termin bearbeiten</h2>
+          <button type="button" class="link-btn close-edit-event-dialog" data-edit-dialog-id="edit-event-dialog-{{ event.id }}">Schließen</button>
+        </div>
+        <input type="hidden" name="action" value="update">
+        <input type="hidden" name="event_id" value="{{ event['id'] }}">
+        <input type="hidden" name="month" value="{{ selected_month }}">
+        <label>Titel
+          <input type="text" name="title" value="{{ event['title'] }}" required>
+        </label>
+        <label>Start
+          <input type="datetime-local" name="start_at" value="{{ datetime_input_value(event['start_at']) }}" required>
+        </label>
+        <label>Ende (optional)
+          <input type="datetime-local" name="end_at" value="{{ datetime_input_value(event['end_at']) }}">
+        </label>
+        <label class="full">Notiz
+          <textarea name="notes" rows="3">{{ event['notes'] }}</textarea>
+        </label>
+        <div class="compact-actions full">
+          <button type="submit">Änderungen speichern</button>
+        </div>
+      </form>
+      <div class="full dialog-delete-row">
+        <button
+          type="button"
+          class="danger open-delete-confirm"
+          data-event-id="{{ event['id'] }}"
+          data-source-dialog-id="edit-event-dialog-{{ event.id }}"
+        >Termin löschen</button>
+      </div>
+    </dialog>
+    {% endif %}
+  {% endfor %}
+</div>
+
+<dialog id="confirm-delete-event-dialog" class="task-dialog confirm-dialog-small">
+  <form method="post" class="form-grid">
+    <div class="dialog-head full">
+      <h2>Termin löschen</h2>
+    </div>
+    <p class="muted">Möchtest du diesen Termin wirklich löschen?</p>
+    <input type="hidden" name="action" value="delete">
+    <input type="hidden" name="event_id" id="confirm-delete-event-id" value="">
+    <input type="hidden" id="confirm-delete-source-dialog-id" value="">
+    <input type="hidden" name="month" value="{{ selected_month }}">
+    <div class="compact-actions">
+      <button type="button" class="secondary" id="confirm-delete-dialog-cancel">Abbrechen</button>
+      <button type="submit" class="danger">Ja, löschen</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  (() => {
+    const createDialog = document.getElementById('create-event-dialog');
+    const createDialogClose = document.getElementById('create-event-dialog-close');
+    const confirmDeleteDialog = document.getElementById('confirm-delete-event-dialog');
+    const confirmDeleteDialogCancel = document.getElementById('confirm-delete-dialog-cancel');
+    const confirmDeleteEventId = document.getElementById('confirm-delete-event-id');
+    const deleteButtons = document.querySelectorAll('.open-delete-confirm[data-event-id]');
+    const openEditButtons = document.querySelectorAll('.open-edit-event[data-edit-dialog-id]');
+    const closeEditButtons = document.querySelectorAll('.close-edit-event-dialog[data-edit-dialog-id]');
+    const scopeSelect = document.getElementById('calendar-scope-select');
+    const userFilter = document.getElementById('calendar-user-filter');
+    const startInput = document.getElementById('calendar-start-input');
+    const dayButtons = document.querySelectorAll('.day-add-btn[data-day]');
+    const dayCells = document.querySelectorAll('.day-cell[data-day-dialog-id]');
+    const chips = document.querySelectorAll('.day-event-chip[data-kind]');
+
+    if (createDialogClose && createDialog) {
+      createDialogClose.addEventListener('click', () => createDialog.close());
+    }
+
+    if (confirmDeleteDialog && confirmDeleteDialogCancel && confirmDeleteEventId) {
+      const closeDeleteDialog = () => {
+        const sourceDialogId = document.getElementById('confirm-delete-source-dialog-id')?.value || '';
+        confirmDeleteEventId.value = '';
+        const sourceDialogInput = document.getElementById('confirm-delete-source-dialog-id');
+        if (sourceDialogInput) {
+          sourceDialogInput.value = '';
+        }
+        confirmDeleteDialog.close();
+
+        if (sourceDialogId) {
+          const sourceDialog = document.getElementById(sourceDialogId);
+          if (sourceDialog) {
+            sourceDialog.showModal();
+          }
+        }
+      };
+
+      confirmDeleteDialogCancel.addEventListener('click', closeDeleteDialog);
+
+      deleteButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const eventId = btn.dataset.eventId;
+          const sourceDialogId = btn.dataset.sourceDialogId || '';
+          if (!eventId) {
+            return;
+          }
+          if (sourceDialogId) {
+            const sourceDialog = document.getElementById(sourceDialogId);
+            if (sourceDialog) {
+              sourceDialog.close();
+            }
+            const sourceDialogInput = document.getElementById('confirm-delete-source-dialog-id');
+            if (sourceDialogInput) {
+              sourceDialogInput.value = sourceDialogId;
+            }
+          }
+          confirmDeleteEventId.value = eventId;
+          confirmDeleteDialog.showModal();
+        });
+      });
+    }
+
+    if (scopeSelect && userFilter) {
+      const syncUserFilterState = () => {
+        const isMeScope = scopeSelect.value === 'me';
+        userFilter.disabled = isMeScope;
+        if (isMeScope) {
+          userFilter.value = '';
+        }
+      };
+      scopeSelect.addEventListener('change', syncUserFilterState);
+      syncUserFilterState();
+    }
+
+    openEditButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const editDialogId = btn.dataset.editDialogId;
+        const sourceDayDialogId = btn.dataset.sourceDayDialogId || '';
+        if (!editDialogId) {
+          return;
+        }
+
+        const editDialog = document.getElementById(editDialogId);
+        if (!editDialog) {
+          return;
+        }
+
+        if (sourceDayDialogId) {
+          const sourceDayDialog = document.getElementById(sourceDayDialogId);
+          if (sourceDayDialog) {
+            sourceDayDialog.close();
+          }
+          editDialog.dataset.returnDialogId = sourceDayDialogId;
+        }
+
+        editDialog.showModal();
+      });
+    });
+
+    closeEditButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const editDialogId = btn.dataset.editDialogId;
+        if (!editDialogId) {
+          return;
+        }
+
+        const editDialog = document.getElementById(editDialogId);
+        if (!editDialog) {
+          return;
+        }
+
+        const returnDialogId = editDialog.dataset.returnDialogId || '';
+        editDialog.dataset.returnDialogId = '';
+        editDialog.close();
+
+        if (returnDialogId) {
+          const returnDialog = document.getElementById(returnDialogId);
+          if (returnDialog) {
+            returnDialog.showModal();
+          }
+        }
+      });
+    });
+
+    dayButtons.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const day = btn.dataset.day;
+        if (!day || !startInput) {
+          return;
+        }
+        startInput.value = `${day}T09:00`;
+        if (createDialog) {
+          createDialog.showModal();
+        }
+        startInput.focus();
+      });
+    });
+
+    dayCells.forEach((cell) => {
+      cell.addEventListener('click', (event) => {
+        if (event.target.closest('.day-add-btn')) {
+          return;
+        }
+        const dialogId = cell.dataset.dayDialogId;
+        if (!dialogId) {
+          return;
+        }
+        const dialog = document.getElementById(dialogId);
+        if (dialog) {
+          dialog.showModal();
+        }
+      });
+    });
+
+    chips.forEach((chip) => {
+      chip.addEventListener('dblclick', () => {
+        const kind = chip.dataset.kind;
+        if (kind === 'personal') {
+          const dialogId = chip.dataset.editDialogId;
+          if (!dialogId) {
+            return;
+          }
+          const dialog = document.getElementById(dialogId);
+          if (dialog) {
+            dialog.showModal();
+          }
+          return;
+        }
+
+        if (kind === 'task') {
+          const taskUrl = chip.dataset.taskUrl;
+          if (taskUrl) {
+            window.location.href = taskUrl;
+          }
+        }
+      });
+    });
+  })();
+</script>
+{% endblock %}
