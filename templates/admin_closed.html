@@ -2,8 +2,7 @@
 {% block title %}Geschlossene Tasks | Task Manager{% endblock %}
 {% block content %}
 <section class="card">
-  <h1>Geschlossene Tasks prüfen</h1>
-  <p class="subtitle">Als Administrator kannst du geschlossene Tasks zurück ans Team senden oder final löschen.</p>
+  <h1>Geschlossene Tasks</h1>
 
   <div class="task-list">
     {% if tasks %}
@@ -11,10 +10,15 @@
       <article class="task-card">
         <strong>{{ task['title'] }}</strong>
         <small>Ansprechpartner: {{ task['contact_person'] }}</small>
-        <small>Erstellt am: {{ format_datetime(task['created_at']) }}</small>
+        <small>Erstellt am: {{ format_system_datetime(task['created_at']) }}</small>
         <small>Fällig bis: {{ format_datetime(task['due_date']) }}</small>
         <small>Erstellt von: {{ task['creator_name'] }}</small>
-        <a class="task-link" href="{{ url_for('task_detail', task_id=task['id']) }}">Task öffnen</a>
+        <a
+          class="task-open-btn"
+          href="{{ url_for('task_detail', task_id=task['id']) }}"
+          title="Task öffnen"
+          aria-label="Task öffnen"
+        >&#9998;</a>
         <div class="status-actions compact-actions">
           <form method="post">
             <input type="hidden" name="action" value="reopen">

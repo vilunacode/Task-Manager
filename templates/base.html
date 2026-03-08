@@ -4,6 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Task Manager{% endblock %}</title>
+  <style>
+    :root {
+      --role-admin-color: {{ app_settings['role_color_admin'] if app_settings else '#facc15' }};
+      --role-system-color: {{ app_settings['role_color_system'] if app_settings else '#dc2626' }};
+      --role-dev-color: {{ app_settings['role_color_dev'] if app_settings else '#2563eb' }};
+      --role-team-color: {{ app_settings['role_color_team'] if app_settings else '#0f766e' }};
+      --general-container-width: {{ app_settings['general_container_width_px'] if app_settings else '1760' }}px;
+      --general-main-min-height: {{ app_settings['general_main_min_height_px'] if app_settings else '0' }}px;
+      --general-dashboard-shell-width: {{ app_settings['general_dashboard_shell_width_px'] if app_settings else '1080' }}px;
+      --dashboard-general-min-height: {{ app_settings['dashboard_general_min_height_px'] if app_settings else '0' }}px;
+      --overview-general-width: {{ app_settings['overview_general_width_px'] if app_settings else '1720' }}px;
+      --overview-general-min-height: {{ app_settings['overview_general_min_height_px'] if app_settings else '0' }}px;
+      --dashboard-category-width: {{ app_settings['dashboard_category_min_width_px'] if app_settings else '320' }}px;
+      --dashboard-category-min-height: {{ app_settings['dashboard_category_min_height_px'] if app_settings else '0' }}px;
+      --overview-category-width: {{ '100%' if app_settings and app_settings['overview_category_width_px'] == '0' else ((app_settings['overview_category_width_px'] if app_settings else '100') ~ 'px') }};
+      --overview-category-min-height: {{ app_settings['overview_category_min_height_px'] if app_settings else '0' }}px;
+      --dashboard-task-card-width: {{ app_settings['dashboard_task_width_px'] if app_settings else '360' }}px;
+      --dashboard-task-card-min-height: {{ app_settings['dashboard_task_min_height_px'] if app_settings else '0' }}px;
+      --overview-task-card-width: {{ app_settings['overview_task_width_px'] if app_settings else '220' }}px;
+      --overview-task-card-min-height: {{ app_settings['overview_task_min_height_px'] if app_settings else '94' }}px;
+    }
+  </style>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
@@ -14,9 +36,16 @@
       {% if user %}
       <nav class="nav">
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('overview') }}">Übersicht</a>
+        <a href="{{ url_for('settings_page') }}">Einstellungen</a>
         {% if user['is_admin'] %}
         <a href="{{ url_for('manage_users') }}">Benutzer</a>
-        <a href="{{ url_for('admin_closed_tasks') }}">Geschlossene Tasks</a>
+        <a href="{{ url_for('admin_closed_tasks') }}" class="nav-with-count">
+          Geschlossene Tasks
+          {% if closed_task_count and closed_task_count > 0 %}
+          <span class="nav-count-badge" title="Geschlossene Tasks">{{ closed_task_count }}</span>
+          {% endif %}
+        </a>
         {% endif %}
         <form method="post" action="{{ url_for('logout') }}">
           <button type="submit" class="link-btn">Logout</button>
@@ -37,7 +66,7 @@
       {% endif %}
     {% endwith %}
 
-    {% if user %}
+    {% if user and show_sidebar|default(true) %}
     <div class="app-layout">
       <aside class="user-sidebar card">
         <h3>Team-Kürzel</h3>
@@ -55,7 +84,7 @@
 
     {% block content %}{% endblock %}
 
-    {% if user %}
+    {% if user and show_sidebar|default(true) %}
       </section>
     </div>
     {% endif %}

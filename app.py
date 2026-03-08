@@ -1,13 +1,15 @@
 import os
 import re
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
+from zoneinfo import ZoneInfo
 
 from flask import (
     Flask,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -28,9 +30,41 @@ ROLE_APPLICATION_DEVELOPER = "application_developer"
 ROLE_TEAM = "team"
 VALID_ROLES = {ROLE_SYSTEM_INTEGRATOR, ROLE_APPLICATION_DEVELOPER, ROLE_TEAM}
 
+DEFAULT_APP_SETTINGS = {
+    "new_task_highlight_seconds": "120",
+    "overview_refresh_interval_seconds": "1",
+    "general_container_width_px": "1760",
+    "general_main_min_height_px": "0",
+    "general_dashboard_shell_width_px": "1080",
+    "dashboard_general_min_height_px": "0",
+    "overview_general_width_px": "1720",
+    "overview_general_min_height_px": "0",
+    "dashboard_category_min_width_px": "320",
+    "dashboard_category_min_height_px": "0",
+    "overview_category_width_px": "0",
+    "overview_category_min_height_px": "0",
+    "dashboard_task_width_px": "360",
+    "dashboard_task_min_height_px": "0",
+    "overview_task_width_px": "220",
+    "overview_task_min_height_px": "94",
+    "role_color_admin": "#facc15",
+    "role_color_system": "#dc2626",
+    "role_color_dev": "#2563eb",
+    "role_color_team": "#0f766e",
+    "new_task_tone": "classic",
+}
+
+TONE_OPTIONS = {
+    "classic": {"type": "sine", "frequency": 880},
+    "soft": {"type": "triangle", "frequency": 660},
+    "alert": {"type": "square", "frequency": 980},
+    "none": {"type": "none", "frequency": 0},
+}
+
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+APP_TIMEZONE = ZoneInfo(os.environ.get("APP_TIMEZONE", "Europe/Berlin"))
 
 
 def get_db() -> sqlite3.Connection:
@@ -92,8 +126,14 @@ def init_db() -> None:
             user_id INTEGER NOT NULL,
             content TEXT NOT NULL,
             created_at TEXT NOT NULL,
+            updated_at TEXT,
             FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
         );
         """
     )
@@ -108,6 +148,10 @@ def init_db() -> None:
     task_columns = {row["name"] for row in db.execute("PRAGMA table_info(tasks)").fetchall()}
     if "due_date" not in task_columns:
         db.execute("ALTER TABLE tasks ADD COLUMN due_date TEXT")
+
+    comment_columns = {row["name"] for row in db.execute("PRAGMA table_info(task_comments)").fetchall()}
+    if "updated_at" not in comment_columns:
+        db.execute("ALTER TABLE task_comments ADD COLUMN updated_at TEXT")
 
     db.execute(
         """
@@ -152,6 +196,31 @@ def init_db() -> None:
         WHERE assignee_id IS NOT NULL
         """
     )
+
+    for key, value in DEFAULT_APP_SETTINGS.items():
+        db.execute(
+            "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+
+    # Keep existing installs in sync with the narrower dashboard default.
+    db.execute(
+        """
+        UPDATE app_settings
+        SET value = '1080'
+        WHERE key = 'general_dashboard_shell_width_px' AND value = '1200'
+        """
+    )
+
+    # Old installs used 0 for category min width which had little visible effect.
+    # Normalize that legacy value to a practical default width.
+    db.execute(
+        """
+        UPDATE app_settings
+        SET value = '320'
+        WHERE key = 'dashboard_category_min_width_px' AND value = '0'
+        """
+    )
     db.commit()
 
 
@@ -177,12 +246,54 @@ def execute(query: str, params=()):
     return cur
 
 
+def app_settings() -> dict[str, str]:
+    stored = {
+        row["key"]: row["value"]
+        for row in query_all("SELECT key, value FROM app_settings")
+    }
+    merged = dict(DEFAULT_APP_SETTINGS)
+    merged.update(stored)
+    return merged
+
+
+def set_app_setting(key: str, value: str) -> None:
+    execute(
+        """
+        INSERT INTO app_settings (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (key, value),
+    )
+
+
+def parse_int_setting(value: str, *, min_value: int, max_value: int) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed < min_value or parsed > max_value:
+        return None
+    return parsed
+
+
+def now_iso() -> str:
+    # Persist timestamps with local timezone offset to avoid UTC display drift.
+    return datetime.now().astimezone().replace(microsecond=0).isoformat()
+
+
+def is_hex_color(value: str) -> bool:
+    return bool(re.fullmatch(r"#[0-9a-fA-F]{6}", value.strip()))
+
+
 def normalize_datetime_value(value: str) -> str:
     raw = value.strip()
     if not raw:
         return ""
 
-    candidate = raw.replace("Z", "")
+    candidate = raw
+    if candidate.endswith("Z"):
+        candidate = candidate[:-1] + "+00:00"
     try:
         dt = datetime.fromisoformat(candidate)
     except ValueError:
@@ -190,6 +301,8 @@ def normalize_datetime_value(value: str) -> str:
             dt = datetime.strptime(candidate, "%Y-%m-%d")
         except ValueError:
             return ""
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(APP_TIMEZONE).replace(tzinfo=None)
     return dt.strftime("%Y-%m-%dT%H:%M")
 
 
@@ -201,6 +314,31 @@ def format_datetime_for_display(value: str | None) -> str:
         return "-"
     dt = datetime.fromisoformat(normalized)
     return dt.strftime("%d.%m.%Y %H:%M Uhr")
+
+
+def format_system_datetime_for_display(value: str | None) -> str:
+    if not value:
+        return "-"
+
+    raw = value.strip()
+    if not raw:
+        return "-"
+
+    candidate = raw
+    if candidate.endswith("Z"):
+        candidate = candidate[:-1] + "+00:00"
+
+    try:
+        dt = datetime.fromisoformat(candidate)
+    except ValueError:
+        return "-"
+
+    # Legacy values were stored without timezone and should be treated as UTC.
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    local_dt = dt.astimezone(APP_TIMEZONE)
+    return local_dt.strftime("%d.%m.%Y %H:%M Uhr")
 
 
 def format_datetime_for_input(value: str | None) -> str:
@@ -432,18 +570,32 @@ def status_label(status: str) -> str:
     return labels.get(status, status)
 
 
+def closed_task_count_for_admin(user) -> int:
+    if user is None or not user["is_admin"]:
+        return 0
+    row = query_one("SELECT COUNT(*) AS cnt FROM tasks WHERE status = ?", (STATUS_CLOSED,))
+    return int(row["cnt"]) if row is not None else 0
+
+
 @app.context_processor
 def inject_helpers():
     user = current_user()
     badges = []
+    settings = app_settings()
+    closed_task_count = 0
     if user is not None:
         badges = sidebar_users()
+        closed_task_count = closed_task_count_for_admin(user)
     return {
         "status_label": status_label,
         "sidebar_users": badges,
         "format_datetime": format_datetime_for_display,
+        "format_system_datetime": format_system_datetime_for_display,
         "datetime_input_value": format_datetime_for_input,
         "is_due_today": is_due_today,
+        "app_settings": settings,
+        "tone_options": sorted(TONE_OPTIONS.keys()),
+        "closed_task_count": closed_task_count,
     }
 
 
@@ -488,7 +640,7 @@ def setup():
                 username,
                 generate_password_hash(password),
                 initials,
-                datetime.utcnow().isoformat(),
+                now_iso(),
             ),
         )
 
@@ -569,6 +721,247 @@ def dashboard():
     )
 
 
+@app.route("/overview")
+@login_required
+def overview():
+    user = current_user()
+    tasks = enrich_tasks_with_assignees(fetch_tasks())
+
+    grouped = {
+        STATUS_OPEN: [],
+        STATUS_IN_PROGRESS: [],
+        STATUS_CLOSED: [],
+    }
+
+    for task in tasks:
+        grouped[task["status"]].append(task)
+
+    return render_template(
+        "overview.html",
+        user=user,
+        grouped=grouped,
+        show_sidebar=False,
+    )
+
+
+@app.route("/api/overview/tasks")
+@login_required
+def overview_tasks_api():
+    tasks = enrich_tasks_with_assignees(fetch_tasks())
+    payload = []
+    for task in tasks:
+        payload.append(
+            {
+                "id": task["id"],
+                "title": task["title"],
+                "status": task["status"],
+                "created_at": task["created_at"],
+                "due_date_display": format_datetime_for_display(task["due_date"]),
+                "assignees": task["assignees"],
+            }
+        )
+    return jsonify({"tasks": payload})
+
+
+@app.route("/settings", methods=["GET", "POST"])
+@login_required
+def settings_page():
+    user = current_user()
+
+    if request.method == "POST":
+        action = request.form.get("action", "").strip()
+
+        if action == "password":
+            current_password = request.form.get("current_password", "")
+            new_password = request.form.get("new_password", "")
+            confirm_password = request.form.get("confirm_password", "")
+
+            if not current_password or not new_password or not confirm_password:
+                flash("Bitte alle Passwortfelder ausfüllen.", "error")
+                return redirect(url_for("settings_page"))
+
+            if not check_password_hash(user["password_hash"], current_password):
+                flash("Aktuelles Passwort ist falsch.", "error")
+                return redirect(url_for("settings_page"))
+
+            if new_password != confirm_password:
+                flash("Neues Passwort und Bestätigung stimmen nicht überein.", "error")
+                return redirect(url_for("settings_page"))
+
+            execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (generate_password_hash(new_password), user["id"]),
+            )
+            flash("Passwort wurde aktualisiert.", "success")
+            return redirect(url_for("settings_page"))
+
+        if action == "admin-settings":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen diese Einstellungen ändern.", "error")
+                return redirect(url_for("settings_page"))
+
+            current_settings = app_settings()
+
+            highlight_seconds = parse_int_setting(
+                request.form.get("new_task_highlight_seconds", ""),
+                min_value=10,
+                max_value=3600,
+            )
+            refresh_seconds = parse_int_setting(
+                request.form.get("overview_refresh_interval_seconds", ""),
+                min_value=1,
+                max_value=60,
+            )
+            general_container_width = parse_int_setting(
+                request.form.get(
+                    "general_container_width_px",
+                    current_settings["general_container_width_px"],
+                ),
+                min_value=900,
+                max_value=3000,
+            )
+            general_main_min_height = parse_int_setting(
+                request.form.get(
+                    "general_main_min_height_px",
+                    current_settings["general_main_min_height_px"],
+                ),
+                min_value=0,
+                max_value=3000,
+            )
+            general_dashboard_shell_width = parse_int_setting(
+                request.form.get("general_dashboard_shell_width_px", ""),
+                min_value=700,
+                max_value=2600,
+            )
+            dashboard_general_min_height = parse_int_setting(
+                request.form.get("dashboard_general_min_height_px", ""),
+                min_value=0,
+                max_value=3000,
+            )
+            overview_general_width = parse_int_setting(
+                request.form.get("overview_general_width_px", ""),
+                min_value=700,
+                max_value=3000,
+            )
+            overview_general_min_height = parse_int_setting(
+                request.form.get("overview_general_min_height_px", ""),
+                min_value=0,
+                max_value=3000,
+            )
+            dashboard_category_min_width = parse_int_setting(
+                request.form.get("dashboard_category_min_width_px", ""),
+                min_value=220,
+                max_value=700,
+            )
+            dashboard_category_min_height = parse_int_setting(
+                request.form.get("dashboard_category_min_height_px", ""),
+                min_value=0,
+                max_value=3000,
+            )
+            overview_category_width = parse_int_setting(
+                request.form.get("overview_category_width_px", ""),
+                min_value=0,
+                max_value=2200,
+            )
+            overview_category_min_height = parse_int_setting(
+                request.form.get("overview_category_min_height_px", ""),
+                min_value=0,
+                max_value=3000,
+            )
+            dashboard_task_width = parse_int_setting(
+                request.form.get("dashboard_task_width_px", ""),
+                min_value=180,
+                max_value=700,
+            )
+            dashboard_task_min_height = parse_int_setting(
+                request.form.get("dashboard_task_min_height_px", ""),
+                min_value=0,
+                max_value=800,
+            )
+            overview_task_width = parse_int_setting(
+                request.form.get("overview_task_width_px", ""),
+                min_value=140,
+                max_value=600,
+            )
+            overview_task_min_height = parse_int_setting(
+                request.form.get("overview_task_min_height_px", ""),
+                min_value=60,
+                max_value=600,
+            )
+
+            role_color_admin = request.form.get("role_color_admin", "").strip()
+            role_color_system = request.form.get("role_color_system", "").strip()
+            role_color_dev = request.form.get("role_color_dev", "").strip()
+            role_color_team = request.form.get("role_color_team", "").strip()
+            new_task_tone = request.form.get("new_task_tone", "classic").strip()
+
+            numeric_values = [
+                highlight_seconds,
+                refresh_seconds,
+                general_container_width,
+                general_main_min_height,
+                general_dashboard_shell_width,
+                dashboard_general_min_height,
+                overview_general_width,
+                overview_general_min_height,
+                dashboard_category_min_width,
+                dashboard_category_min_height,
+                overview_category_width,
+                overview_category_min_height,
+                dashboard_task_width,
+                dashboard_task_min_height,
+                overview_task_width,
+                overview_task_min_height,
+            ]
+            if any(value is None for value in numeric_values):
+                flash("Mindestens ein Zahlenwert ist ungültig oder außerhalb des erlaubten Bereichs.", "error")
+                return redirect(url_for("settings_page"))
+
+            colors = [role_color_admin, role_color_system, role_color_dev, role_color_team]
+            if not all(is_hex_color(color) for color in colors):
+                flash("Farben müssen im Format #RRGGBB angegeben werden.", "error")
+                return redirect(url_for("settings_page"))
+
+            if new_task_tone not in TONE_OPTIONS:
+                flash("Ungültige Ton-Auswahl.", "error")
+                return redirect(url_for("settings_page"))
+
+            set_app_setting("new_task_highlight_seconds", str(highlight_seconds))
+            set_app_setting("overview_refresh_interval_seconds", str(refresh_seconds))
+            set_app_setting("general_container_width_px", str(general_container_width))
+            set_app_setting("general_main_min_height_px", str(general_main_min_height))
+            set_app_setting("general_dashboard_shell_width_px", str(general_dashboard_shell_width))
+            set_app_setting("dashboard_general_min_height_px", str(dashboard_general_min_height))
+            set_app_setting("overview_general_width_px", str(overview_general_width))
+            set_app_setting("overview_general_min_height_px", str(overview_general_min_height))
+            set_app_setting("dashboard_category_min_width_px", str(dashboard_category_min_width))
+            set_app_setting("dashboard_category_min_height_px", str(dashboard_category_min_height))
+            set_app_setting("overview_category_width_px", str(overview_category_width))
+            set_app_setting("overview_category_min_height_px", str(overview_category_min_height))
+            set_app_setting("dashboard_task_width_px", str(dashboard_task_width))
+            set_app_setting("dashboard_task_min_height_px", str(dashboard_task_min_height))
+            set_app_setting("overview_task_width_px", str(overview_task_width))
+            set_app_setting("overview_task_min_height_px", str(overview_task_min_height))
+            set_app_setting("role_color_admin", role_color_admin)
+            set_app_setting("role_color_system", role_color_system)
+            set_app_setting("role_color_dev", role_color_dev)
+            set_app_setting("role_color_team", role_color_team)
+            set_app_setting("new_task_tone", new_task_tone)
+
+            flash("Admin-Einstellungen wurden gespeichert.", "success")
+            return redirect(url_for("settings_page"))
+
+        flash("Unbekannte Aktion.", "error")
+        return redirect(url_for("settings_page"))
+
+    return render_template(
+        "settings.html",
+        user=user,
+        settings=app_settings(),
+        tone_options=sorted(TONE_OPTIONS.keys()),
+    )
+
+
 @app.route("/tasks/create", methods=["POST"])
 @login_required
 def create_task():
@@ -610,7 +1003,7 @@ def create_task():
         flash("Mindestens ein ausgewählter Bearbeiter existiert nicht.", "error")
         return redirect(url_for("dashboard"))
 
-    now = datetime.utcnow().isoformat()
+    now = now_iso()
     cur = execute(
         """
         INSERT INTO tasks (
@@ -681,8 +1074,10 @@ def task_comments(task_id: int):
         """
         SELECT
             tc.id,
+            tc.user_id,
             tc.content,
             tc.created_at,
+            tc.updated_at,
             u.username,
             u.initials,
             u.role,
@@ -715,11 +1110,17 @@ def task_with_details(task_id: int):
     assignees = task_assignees_map([task_id]).get(task_id, [])
     comments = []
     for comment in task_comments(task_id):
+        created_at = format_system_datetime_for_display(comment["created_at"])
+        updated_raw = comment["updated_at"]
+        updated_at = format_system_datetime_for_display(updated_raw) if updated_raw else ""
         comments.append(
             {
                 "id": comment["id"],
+                "user_id": comment["user_id"],
                 "content": comment["content"],
-                "created_at": comment["created_at"],
+                "created_at": created_at,
+                "updated_at": updated_at,
+                "is_edited": bool(updated_raw),
                 "username": comment["username"],
                 "initials": comment["initials"] or make_initials_from_username(comment["username"]),
                 "role_label": role_label(comment["role"], comment["is_admin"]),
@@ -760,7 +1161,7 @@ def update_task_status(task_id: int):
 
     execute(
         "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
-        (new_status, datetime.utcnow().isoformat(), task_id),
+        (new_status, now_iso(), task_id),
     )
     flash("Task-Status aktualisiert.", "success")
     return redirect(url_for("dashboard", filter=return_filter))
@@ -817,12 +1218,76 @@ def add_task_comment(task_id: int):
 
     execute(
         """
-        INSERT INTO task_comments (task_id, user_id, content, created_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO task_comments (task_id, user_id, content, created_at, updated_at)
+        VALUES (?, ?, ?, ?, NULL)
         """,
-        (task_id, user["id"], content, datetime.utcnow().isoformat()),
+        (task_id, user["id"], content, now_iso()),
     )
     flash("Kommentar wurde gespeichert.", "success")
+    return redirect(url_for("task_detail", task_id=task_id))
+
+
+@app.route("/tasks/<int:task_id>/comments/<int:comment_id>/edit", methods=["POST"])
+@login_required
+def edit_task_comment(task_id: int, comment_id: int):
+    user = current_user()
+    task = query_one("SELECT id FROM tasks WHERE id = ?", (task_id,))
+    if task is None:
+        flash("Task nicht gefunden.", "error")
+        return redirect(url_for("dashboard"))
+
+    comment = query_one(
+        "SELECT id, task_id, user_id FROM task_comments WHERE id = ? AND task_id = ?",
+        (comment_id, task_id),
+    )
+    if comment is None:
+        flash("Kommentar nicht gefunden.", "error")
+        return redirect(url_for("task_detail", task_id=task_id))
+
+    if not (user["is_admin"] or int(comment["user_id"]) == int(user["id"])):
+        flash("Nur Verfasser oder Admin dürfen diesen Kommentar bearbeiten.", "error")
+        return redirect(url_for("task_detail", task_id=task_id))
+
+    content = request.form.get("content", "").strip()
+    if not content:
+        flash("Kommentar darf nicht leer sein.", "error")
+        return redirect(url_for("task_detail", task_id=task_id))
+
+    execute(
+        """
+        UPDATE task_comments
+        SET content = ?, updated_at = ?
+        WHERE id = ? AND task_id = ?
+        """,
+        (content, now_iso(), comment_id, task_id),
+    )
+    flash("Kommentar wurde aktualisiert.", "success")
+    return redirect(url_for("task_detail", task_id=task_id))
+
+
+@app.route("/tasks/<int:task_id>/comments/<int:comment_id>/delete", methods=["POST"])
+@login_required
+def delete_task_comment(task_id: int, comment_id: int):
+    user = current_user()
+    task = query_one("SELECT id FROM tasks WHERE id = ?", (task_id,))
+    if task is None:
+        flash("Task nicht gefunden.", "error")
+        return redirect(url_for("dashboard"))
+
+    comment = query_one(
+        "SELECT id, task_id, user_id FROM task_comments WHERE id = ? AND task_id = ?",
+        (comment_id, task_id),
+    )
+    if comment is None:
+        flash("Kommentar nicht gefunden.", "error")
+        return redirect(url_for("task_detail", task_id=task_id))
+
+    if not (user["is_admin"] or int(comment["user_id"]) == int(user["id"])):
+        flash("Nur Verfasser oder Admin dürfen diesen Kommentar löschen.", "error")
+        return redirect(url_for("task_detail", task_id=task_id))
+
+    execute("DELETE FROM task_comments WHERE id = ? AND task_id = ?", (comment_id, task_id))
+    flash("Kommentar wurde gelöscht.", "success")
     return redirect(url_for("task_detail", task_id=task_id))
 
 
@@ -885,7 +1350,7 @@ def edit_task(task_id: int):
             description,
             normalized_due_date,
             assignee_ids[0],
-            datetime.utcnow().isoformat(),
+            now_iso(),
             task_id,
         ),
     )
@@ -906,16 +1371,22 @@ def edit_task(task_id: int):
 def manage_users():
     if request.method == "POST":
         action = request.form.get("action", "")
+        current = current_user()
 
         if action == "create":
             username = request.form.get("username", "").strip()
             password = request.form.get("password", "").strip()
+            password_confirm = request.form.get("password_confirm", "").strip()
             initials = normalize_initials(request.form.get("initials", ""))
             role = normalize_role(request.form.get("role", ""))
             is_admin = 1 if role == "admin" else 0
 
             if not username or not password:
                 flash("Benutzername und Passwort sind erforderlich.", "error")
+                return redirect(url_for("manage_users"))
+
+            if password != password_confirm:
+                flash("Passwort und Passwort-Bestätigung stimmen nicht überein.", "error")
                 return redirect(url_for("manage_users"))
 
             if not initials:
@@ -947,15 +1418,106 @@ def manage_users():
                     is_admin,
                     initials,
                     role,
-                    datetime.utcnow().isoformat(),
+                    now_iso(),
                 ),
             )
             flash("Benutzer wurde angelegt.", "success")
             return redirect(url_for("manage_users"))
 
+        if action == "update":
+            target_id = request.form.get("user_id", "").strip()
+            username = request.form.get("username", "").strip()
+            initials = normalize_initials(request.form.get("initials", ""))
+            role = normalize_role(request.form.get("role", ""))
+            new_password = request.form.get("new_password", "")
+            confirm_password = request.form.get("confirm_password", "")
+
+            target = query_one("SELECT * FROM users WHERE id = ?", (target_id,))
+            if target is None:
+                flash("Benutzer nicht gefunden.", "error")
+                return redirect(url_for("manage_users"))
+
+            if not username:
+                flash("Benutzername ist erforderlich.", "error")
+                return redirect(url_for("manage_users"))
+
+            if not initials:
+                flash("Kürzel muss genau 3 Zeichen (A-Z/0-9) lang sein.", "error")
+                return redirect(url_for("manage_users"))
+
+            if not role:
+                flash("Bitte eine gültige Rolle auswählen.", "error")
+                return redirect(url_for("manage_users"))
+
+            username_exists = query_one(
+                "SELECT id FROM users WHERE username = ? AND id != ?",
+                (username, target_id),
+            )
+            if username_exists is not None:
+                flash("Benutzername ist bereits vergeben.", "error")
+                return redirect(url_for("manage_users"))
+
+            initials_exists = query_one(
+                "SELECT id FROM users WHERE initials = ? AND id != ?",
+                (initials, target_id),
+            )
+            if initials_exists is not None:
+                flash("Dieses Kürzel ist bereits vergeben.", "error")
+                return redirect(url_for("manage_users"))
+
+            if (new_password and not confirm_password) or (confirm_password and not new_password):
+                flash("Bitte neues Passwort und Bestätigung vollständig ausfüllen.", "error")
+                return redirect(url_for("manage_users"))
+
+            if new_password and new_password != confirm_password:
+                flash("Neues Passwort und Bestätigung stimmen nicht überein.", "error")
+                return redirect(url_for("manage_users"))
+
+            is_admin = 1 if role == "admin" else 0
+            if target["is_admin"] and not is_admin:
+                row = query_one("SELECT COUNT(*) AS cnt FROM users WHERE is_admin = 1")
+                if int(row["cnt"]) <= 1:
+                    flash("Der letzte Admin kann nicht zur Nicht-Admin-Rolle geändert werden.", "error")
+                    return redirect(url_for("manage_users"))
+
+            if new_password:
+                execute(
+                    """
+                    UPDATE users
+                    SET username = ?, initials = ?, role = ?, is_admin = ?, password_hash = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        username,
+                        initials,
+                        role,
+                        is_admin,
+                        generate_password_hash(new_password),
+                        target_id,
+                    ),
+                )
+                if target["id"] == current["id"]:
+                    flash("Eigener Account wurde inkl. Passwort aktualisiert.", "success")
+                else:
+                    flash("Benutzerprofil wurde inkl. Passwort aktualisiert.", "success")
+            else:
+                execute(
+                    """
+                    UPDATE users
+                    SET username = ?, initials = ?, role = ?, is_admin = ?
+                    WHERE id = ?
+                    """,
+                    (username, initials, role, is_admin, target_id),
+                )
+                if target["id"] == current["id"]:
+                    flash("Eigener Account wurde aktualisiert.", "success")
+                else:
+                    flash("Benutzerprofil wurde aktualisiert.", "success")
+
+            return redirect(url_for("manage_users"))
+
         if action == "delete":
             target_id = request.form.get("user_id", "").strip()
-            current = current_user()
 
             target = query_one("SELECT * FROM users WHERE id = ?", (target_id,))
             if target is None:
@@ -1035,7 +1597,7 @@ def admin_closed_tasks():
         if action == "reopen":
             execute(
                 "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
-                (STATUS_IN_PROGRESS, datetime.utcnow().isoformat(), task_id),
+                (STATUS_IN_PROGRESS, now_iso(), task_id),
             )
             flash("Task wurde ans Team zurückgesendet.", "success")
             return redirect(url_for("admin_closed_tasks"))

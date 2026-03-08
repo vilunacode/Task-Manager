@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+{% block title %}Einstellungen | Task Manager{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Einstellungen</h1>
+</section>
+
+<section class="card">
+  <h2>Passwort ändern</h2>
+  <form method="post" class="form-grid two-columns">
+    <input type="hidden" name="action" value="password">
+    <label>Aktuelles Passwort
+      <input type="password" name="current_password" required>
+    </label>
+    <label>Neues Passwort
+      <input type="password" name="new_password" required>
+    </label>
+    <label>Neues Passwort bestätigen
+      <input type="password" name="confirm_password" required>
+    </label>
+    <div class="actions-row">
+      <button type="submit">Passwort speichern</button>
+    </div>
+  </form>
+</section>
+
+{% if user['is_admin'] %}
+<section class="card">
+  <h2>Design-Anpassungen</h2>
+  <form method="post" class="form-grid two-columns">
+    <input type="hidden" name="action" value="admin-settings">
+
+    <h3 class="full">General</h3>
+    <label>Highlight-Dauer neue Task (Sek.)
+      <input type="number" min="10" max="3600" name="new_task_highlight_seconds" value="{{ settings['new_task_highlight_seconds'] }}" required>
+    </label>
+    <label>Live-Refresh Intervall (Sek.)
+      <input type="number" min="1" max="60" name="overview_refresh_interval_seconds" value="{{ settings['overview_refresh_interval_seconds'] }}" required>
+    </label>
+
+    <h3 class="full">Dashboard</h3>
+    <label>General Breite (px)
+      <input type="number" min="700" max="2600" name="general_dashboard_shell_width_px" value="{{ settings['general_dashboard_shell_width_px'] }}" required>
+    </label>
+    <label>General Mindesthöhe (px)
+      <input type="number" min="0" max="3000" name="dashboard_general_min_height_px" value="{{ settings['dashboard_general_min_height_px'] }}" required>
+    </label>
+    <label>Kategorie Breite (px)
+      <input type="number" min="220" max="700" name="dashboard_category_min_width_px" value="{{ settings['dashboard_category_min_width_px'] }}" required>
+    </label>
+    <label>Kategorie Mindesthöhe (px)
+      <input type="number" min="0" max="3000" name="dashboard_category_min_height_px" value="{{ settings['dashboard_category_min_height_px'] }}" required>
+    </label>
+
+    <label>Task-Breite (px)
+      <input type="number" min="180" max="700" name="dashboard_task_width_px" value="{{ settings['dashboard_task_width_px'] }}" required>
+    </label>
+    <label>Task-Mindesthöhe (px)
+      <input type="number" min="0" max="800" name="dashboard_task_min_height_px" value="{{ settings['dashboard_task_min_height_px'] }}" required>
+    </label>
+
+    <h3 class="full">Übersicht</h3>
+    <label>General Breite (px)
+      <input type="number" min="700" max="3000" name="overview_general_width_px" value="{{ settings['overview_general_width_px'] }}" required>
+    </label>
+    <label>General Mindesthöhe (px)
+      <input type="number" min="0" max="3000" name="overview_general_min_height_px" value="{{ settings['overview_general_min_height_px'] }}" required>
+    </label>
+    <label>Kategorie Mindestbreite (px, 0 = volle Breite)
+      <input type="number" min="0" max="2200" name="overview_category_width_px" value="{{ settings['overview_category_width_px'] }}" required>
+    </label>
+    <label>Kategorie Mindesthöhe (px)
+      <input type="number" min="0" max="3000" name="overview_category_min_height_px" value="{{ settings['overview_category_min_height_px'] }}" required>
+    </label>
+
+    <label>Task-Breite (px)
+      <input type="number" min="140" max="600" name="overview_task_width_px" value="{{ settings['overview_task_width_px'] }}" required>
+    </label>
+    <label>Task-Mindesthöhe (px)
+      <input type="number" min="60" max="600" name="overview_task_min_height_px" value="{{ settings['overview_task_min_height_px'] }}" required>
+    </label>
+
+    <h3 class="full">Rollenfarben Und Ton</h3>
+
+    <label>Farbe Rolle Admin
+      <input type="color" name="role_color_admin" value="{{ settings['role_color_admin'] }}" required>
+    </label>
+    <label>Farbe Rolle Systemintegrator
+      <input type="color" name="role_color_system" value="{{ settings['role_color_system'] }}" required>
+    </label>
+    <label>Farbe Rolle Anwendungsentwickler
+      <input type="color" name="role_color_dev" value="{{ settings['role_color_dev'] }}" required>
+    </label>
+    <label>Farbe Rolle Team
+      <input type="color" name="role_color_team" value="{{ settings['role_color_team'] }}" required>
+    </label>
+
+    <label>Ton bei neuer Task
+      <select name="new_task_tone" required>
+        {% for tone in tone_options %}
+        <option value="{{ tone }}" {{ 'selected' if settings['new_task_tone'] == tone else '' }}>{{ tone }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <div class="actions-row">
+      <button type="submit">Design-Anpassungen speichern</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

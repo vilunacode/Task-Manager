@@ -9,7 +9,7 @@
   </div>
   <p>{{ task['description'] }}</p>
   <small>Ansprechpartner: {{ task['contact_person'] }}</small><br>
-  <small>Erstellt am: {{ format_datetime(task['created_at']) }}</small><br>
+  <small>Erstellt am: {{ format_system_datetime(task['created_at']) }}</small><br>
   <small>Fällig bis: {{ format_datetime(task['due_date']) }}</small><br>
   <small>Erstellt von: {{ task['creator_name'] }}</small>
   <div class="task-footer">
@@ -82,9 +82,39 @@
           <div>
             <strong>{{ comment['username'] }}</strong><br>
             <small class="muted">{{ comment['created_at'] }}</small>
+            {% if comment['is_edited'] %}
+            <br><small class="muted">Geändert am: {{ comment['updated_at'] }}</small>
+            {% endif %}
           </div>
         </div>
         <p>{{ comment['content'] }}</p>
+        {% if user['is_admin'] or comment['user_id'] == user['id'] %}
+        <div class="compact-actions">
+          <button
+            type="button"
+            class="secondary small-btn"
+            onclick="document.getElementById('edit-comment-dialog-{{ comment.id }}').showModal()"
+          >Kommentar bearbeiten</button>
+          <form method="post" action="{{ url_for('delete_task_comment', task_id=task['id'], comment_id=comment['id']) }}" onsubmit="return confirm('Kommentar wirklich löschen?');">
+            <button type="submit" class="danger small-btn">Kommentar löschen</button>
+          </form>
+        </div>
+
+        <dialog id="edit-comment-dialog-{{ comment.id }}" class="task-dialog">
+          <form method="post" action="{{ url_for('edit_task_comment', task_id=task['id'], comment_id=comment['id']) }}" class="form-grid">
+            <div class="dialog-head full">
+              <h2>Kommentar bearbeiten</h2>
+              <button type="button" class="link-btn" onclick="document.getElementById('edit-comment-dialog-{{ comment.id }}').close()">Schließen</button>
+            </div>
+            <label>Kommentar
+              <textarea name="content" rows="4" required>{{ comment['content'] }}</textarea>
+            </label>
+            <div class="actions-row">
+              <button type="submit">Änderungen speichern</button>
+            </div>
+          </form>
+        </dialog>
+        {% endif %}
       </article>
       {% endfor %}
     {% else %}

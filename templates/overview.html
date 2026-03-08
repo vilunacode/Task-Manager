@@ -1,0 +1,294 @@
+{% extends 'base.html' %}
+{% block title %}Ticket-Übersicht | Task Manager{% endblock %}
+{% block content %}
+<div class="overview-page">
+  <section class="card overview-card">
+    <div class="section-head">
+      <h1>Ticket-Übersicht</h1>
+    </div>
+
+    <section class="overview-board">
+      {% for status, tasks in grouped.items() %}
+      <article class="overview-column" data-status="{{ status }}">
+        <h3>{{ status_label(status) }} <span class="count">{{ tasks|length }}</span></h3>
+        <div class="overview-task-list">
+          {% if tasks %}
+            {% for task in tasks %}
+            <div class="overview-task-card" data-task-id="{{ task['id'] }}" data-created-at="{{ task['created_at'] }}" data-status="{{ task['status'] }}">
+              <strong>{{ task['title'] }}</strong>
+              <small>Fällig: {{ format_datetime(task['due_date']) }}</small>
+              <div class="overview-assignees">
+                {% if task['assignees'] %}
+                  {% for assignee in task['assignees'] %}
+                  <span class="initial-badge {{ assignee['color_class'] }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
+                  {% endfor %}
+                {% else %}
+                  <span class="muted">Nicht zugewiesen</span>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <p class="empty">Keine Tasks</p>
+          {% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    </section>
+  </section>
+</div>
+
+<script>
+  (() => {
+    const cards = document.querySelectorAll(".overview-task-card[data-task-id][data-created-at]");
+    const columns = document.querySelectorAll(".overview-column[data-status]");
+
+    const STORAGE_KEY = "task_manager_seen_overview_tasks_v1";
+    const FRESH_WINDOW_MS = {{ (app_settings['new_task_highlight_seconds']|int if app_settings else 120) * 1000 }};
+    const REFRESH_INTERVAL_MS = {{ (app_settings['overview_refresh_interval_seconds']|int if app_settings else 1) * 1000 }};
+    const NEW_TASK_TONE = "{{ app_settings['new_task_tone'] if app_settings else 'classic' }}";
+    const now = Date.now();
+    const seen = new Set(JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"));
+    const cardById = new Map();
+    let hasFresh = false;
+
+    const playBeep = () => {
+      try {
+        if (NEW_TASK_TONE === "none") {
+          return;
+        }
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) {
+          return;
+        }
+
+        const ctx = new AudioCtx();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+
+        const toneMap = {
+          classic: { type: "sine", frequency: 880 },
+          soft: { type: "triangle", frequency: 660 },
+          alert: { type: "square", frequency: 980 },
+        };
+        const tone = toneMap[NEW_TASK_TONE] || toneMap.classic;
+
+        osc.type = tone.type;
+        osc.frequency.value = tone.frequency;
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.36);
+      } catch (error) {
+        // Ignore browser autoplay/audio restrictions.
+      }
+    };
+
+    const findColumnByStatus = (status) => document.querySelector(`.overview-column[data-status="${status}"]`);
+
+    const updateCount = (column) => {
+      const count = column.querySelector(".count");
+      const list = column.querySelector(".overview-task-list");
+      if (!count || !list) {
+        return;
+      }
+      const cardCount = list.querySelectorAll(".overview-task-card").length;
+      count.textContent = String(cardCount);
+
+      const emptyPlaceholder = list.querySelector(".empty");
+      if (cardCount > 0) {
+        if (emptyPlaceholder) {
+          emptyPlaceholder.remove();
+        }
+        return;
+      }
+
+      if (!emptyPlaceholder) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "Keine Tasks";
+        list.appendChild(empty);
+      }
+    };
+
+    const renderAssignees = (container, assignees) => {
+      container.innerHTML = "";
+      if (Array.isArray(assignees) && assignees.length) {
+        assignees.forEach((assignee) => {
+          const badgeItem = document.createElement("span");
+          badgeItem.className = `initial-badge ${assignee.color_class || "badge-dev"}`;
+          badgeItem.title = `${assignee.username || ""} (${assignee.role_label || ""})`;
+          badgeItem.textContent = assignee.initials || "USR";
+          container.appendChild(badgeItem);
+        });
+        return;
+      }
+
+      const text = document.createElement("span");
+      text.className = "muted";
+      text.textContent = "Nicht zugewiesen";
+      container.appendChild(text);
+    };
+
+    const createTaskCard = (task) => {
+      const card = document.createElement("div");
+      card.className = "overview-task-card new-task-pop";
+      card.dataset.taskId = String(task.id);
+      card.dataset.createdAt = task.created_at || "";
+      card.dataset.status = task.status || "";
+
+      const badge = document.createElement("span");
+      badge.className = "new-task-chip";
+      badge.textContent = "Neu";
+      card.appendChild(badge);
+
+      const title = document.createElement("strong");
+      title.textContent = task.title || "(Ohne Titel)";
+      card.appendChild(title);
+
+      const due = document.createElement("small");
+      due.className = "overview-due-line";
+      due.textContent = `Fällig: ${task.due_date_display || "-"}`;
+      card.appendChild(due);
+
+      const assigneesWrap = document.createElement("div");
+      assigneesWrap.className = "overview-assignees";
+      renderAssignees(assigneesWrap, task.assignees);
+
+      card.appendChild(assigneesWrap);
+      return card;
+    };
+
+    const updateTaskCard = (card, task) => {
+      card.dataset.status = task.status || "";
+
+      const title = card.querySelector("strong");
+      if (title) {
+        title.textContent = task.title || "(Ohne Titel)";
+      }
+
+      const due = card.querySelector(".overview-due-line") || card.querySelector("small");
+      if (due) {
+        due.textContent = `Fällig: ${task.due_date_display || "-"}`;
+      }
+
+      const assigneesWrap = card.querySelector(".overview-assignees");
+      if (assigneesWrap) {
+        renderAssignees(assigneesWrap, task.assignees);
+      }
+    };
+
+    cards.forEach((card) => {
+      const taskId = card.dataset.taskId;
+      const createdAtRaw = card.dataset.createdAt || "";
+      const createdAtMs = Date.parse(createdAtRaw);
+      if (taskId) {
+        cardById.set(taskId, card);
+      }
+      if (!taskId || Number.isNaN(createdAtMs)) {
+        return;
+      }
+
+      const isFresh = now - createdAtMs >= 0 && now - createdAtMs <= FRESH_WINDOW_MS;
+      const isNewForViewer = !seen.has(taskId);
+
+      if (isFresh && isNewForViewer) {
+        hasFresh = true;
+        card.classList.add("new-task-pop");
+
+        const badge = document.createElement("span");
+        badge.className = "new-task-chip";
+        badge.textContent = "Neu";
+        card.prepend(badge);
+      }
+
+      seen.add(taskId);
+    });
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(seen).slice(-500)));
+
+    if (hasFresh) {
+      playBeep();
+    }
+
+    const pollAndSyncTasks = async () => {
+      try {
+        const response = await fetch("{{ url_for('overview_tasks_api') }}", {
+          headers: { "Accept": "application/json" },
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          return;
+        }
+
+        const data = await response.json();
+        const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+        const serverIds = new Set();
+        let foundNew = false;
+
+        tasks.forEach((task) => {
+          const id = String(task.id);
+          serverIds.add(id);
+
+          const existingCard = cardById.get(id);
+          if (existingCard) {
+            const previousStatus = existingCard.dataset.status || "";
+            updateTaskCard(existingCard, task);
+
+            if (previousStatus !== task.status) {
+              const targetColumn = findColumnByStatus(task.status);
+              const targetList = targetColumn ? targetColumn.querySelector(".overview-task-list") : null;
+              if (targetList) {
+                targetList.prepend(existingCard);
+              }
+            }
+            existingCard.dataset.status = task.status;
+            return;
+          }
+
+          const column = findColumnByStatus(task.status);
+          if (!column) {
+            return;
+          }
+
+          const list = column.querySelector(".overview-task-list");
+          if (!list) {
+            return;
+          }
+
+          const card = createTaskCard(task);
+          list.prepend(card);
+          cardById.set(id, card);
+          seen.add(id);
+          foundNew = true;
+        });
+
+        Array.from(cardById.entries()).forEach(([id, card]) => {
+          if (serverIds.has(id)) {
+            return;
+          }
+          card.remove();
+          cardById.delete(id);
+        });
+
+        columns.forEach((column) => updateCount(column));
+
+        if (foundNew) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(seen).slice(-500)));
+          playBeep();
+        }
+      } catch (error) {
+        // Ignore transient polling failures.
+      }
+    };
+
+    if (columns.length) {
+      setInterval(pollAndSyncTasks, REFRESH_INTERVAL_MS);
+    }
+  })();
+</script>
+{% endblock %}
