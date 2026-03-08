@@ -148,6 +148,12 @@ def init_db() -> None:
     task_columns = {row["name"] for row in db.execute("PRAGMA table_info(tasks)").fetchall()}
     if "due_date" not in task_columns:
         db.execute("ALTER TABLE tasks ADD COLUMN due_date TEXT")
+    if "close_reason" not in task_columns:
+        db.execute("ALTER TABLE tasks ADD COLUMN close_reason TEXT")
+    if "closed_at" not in task_columns:
+        db.execute("ALTER TABLE tasks ADD COLUMN closed_at TEXT")
+    if "closed_by" not in task_columns:
+        db.execute("ALTER TABLE tasks ADD COLUMN closed_by INTEGER")
 
     comment_columns = {row["name"] for row in db.execute("PRAGMA table_info(task_comments)").fetchall()}
     if "updated_at" not in comment_columns:
@@ -1064,6 +1070,11 @@ def can_access_task_detail(user, task_id: int) -> bool:
 
 
 def can_edit_task_content(user, task_id: int) -> bool:
+    task = query_one("SELECT status FROM tasks WHERE id = ?", (task_id,))
+    if task is None:
+        return False
+    if task["status"] == STATUS_CLOSED:
+        return False
     if user["is_admin"]:
         return True
     return is_task_creator(user, task_id)
@@ -1159,6 +1170,27 @@ def update_task_status(task_id: int):
         flash("Nur Administratoren dürfen geschlossene Tasks zurücksetzen.", "error")
         return redirect(url_for("dashboard", filter=return_filter))
 
+    if task["status"] == STATUS_CLOSED and new_status == STATUS_CLOSED:
+        flash("Task ist bereits geschlossen.", "error")
+        return redirect(url_for("dashboard", filter=return_filter))
+
+    if new_status == STATUS_CLOSED:
+        close_reason = request.form.get("close_reason", "").strip()
+        if not close_reason:
+            flash("Bitte eine Begründung angeben, warum die Task geschlossen wird.", "error")
+            return redirect(url_for("dashboard", filter=return_filter))
+
+        execute(
+            """
+            UPDATE tasks
+            SET status = ?, updated_at = ?, close_reason = ?, closed_at = ?, closed_by = ?
+            WHERE id = ?
+            """,
+            (new_status, now_iso(), close_reason, now_iso(), user["id"], task_id),
+        )
+        flash("Task wurde geschlossen.", "success")
+        return redirect(url_for("dashboard", filter=return_filter))
+
     execute(
         "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
         (new_status, now_iso(), task_id),
@@ -1194,7 +1226,7 @@ def task_detail(task_id: int):
         task=task,
         users=users,
         can_edit_task_content=can_edit_task_content(user, task_id),
-        can_comment=user["is_admin"] or can_manage_task(user, task_id),
+        can_comment=(task["status"] != STATUS_CLOSED) and (user["is_admin"] or can_manage_task(user, task_id)),
     )
 
 
@@ -1202,10 +1234,14 @@ def task_detail(task_id: int):
 @login_required
 def add_task_comment(task_id: int):
     user = current_user()
-    task = query_one("SELECT id FROM tasks WHERE id = ?", (task_id,))
+    task = query_one("SELECT id, status FROM tasks WHERE id = ?", (task_id,))
     if task is None:
         flash("Task nicht gefunden.", "error")
         return redirect(url_for("dashboard"))
+
+    if task["status"] == STATUS_CLOSED:
+        flash("Geschlossene Tasks sind schreibgeschützt.", "error")
+        return redirect(url_for("task_detail", task_id=task_id))
 
     if not (user["is_admin"] or can_manage_task(user, task_id)):
         flash("Nur zugewiesene Benutzer oder Admins dürfen kommentieren.", "error")
@@ -1231,10 +1267,14 @@ def add_task_comment(task_id: int):
 @login_required
 def edit_task_comment(task_id: int, comment_id: int):
     user = current_user()
-    task = query_one("SELECT id FROM tasks WHERE id = ?", (task_id,))
+    task = query_one("SELECT id, status FROM tasks WHERE id = ?", (task_id,))
     if task is None:
         flash("Task nicht gefunden.", "error")
         return redirect(url_for("dashboard"))
+
+    if task["status"] == STATUS_CLOSED:
+        flash("Geschlossene Tasks sind schreibgeschützt.", "error")
+        return redirect(url_for("task_detail", task_id=task_id))
 
     comment = query_one(
         "SELECT id, task_id, user_id FROM task_comments WHERE id = ? AND task_id = ?",
@@ -1269,10 +1309,14 @@ def edit_task_comment(task_id: int, comment_id: int):
 @login_required
 def delete_task_comment(task_id: int, comment_id: int):
     user = current_user()
-    task = query_one("SELECT id FROM tasks WHERE id = ?", (task_id,))
+    task = query_one("SELECT id, status FROM tasks WHERE id = ?", (task_id,))
     if task is None:
         flash("Task nicht gefunden.", "error")
         return redirect(url_for("dashboard"))
+
+    if task["status"] == STATUS_CLOSED:
+        flash("Geschlossene Tasks sind schreibgeschützt.", "error")
+        return redirect(url_for("task_detail", task_id=task_id))
 
     comment = query_one(
         "SELECT id, task_id, user_id FROM task_comments WHERE id = ? AND task_id = ?",
@@ -1299,6 +1343,10 @@ def edit_task(task_id: int):
     if task is None:
         flash("Task nicht gefunden.", "error")
         return redirect(url_for("dashboard"))
+
+    if task["status"] == STATUS_CLOSED:
+        flash("Geschlossene Tasks sind schreibgeschützt.", "error")
+        return redirect(url_for("task_detail", task_id=task_id))
 
     if not can_edit_task_content(user, task_id):
         flash("Nur Ersteller oder Admin dürfen diese Task bearbeiten.", "error")
@@ -1596,7 +1644,11 @@ def admin_closed_tasks():
 
         if action == "reopen":
             execute(
-                "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
+                """
+                UPDATE tasks
+                SET status = ?, updated_at = ?, close_reason = NULL, closed_at = NULL, closed_by = NULL
+                WHERE id = ?
+                """,
                 (STATUS_IN_PROGRESS, now_iso(), task_id),
             )
             flash("Task wurde ans Team zurückgesendet.", "success")

@@ -12,6 +12,9 @@
   <small>Erstellt am: {{ format_system_datetime(task['created_at']) }}</small><br>
   <small>Fällig bis: {{ format_datetime(task['due_date']) }}</small><br>
   <small>Erstellt von: {{ task['creator_name'] }}</small>
+  {% if task['status'] == 'closed' %}
+  <br><small><strong>Schließungsgrund:</strong> {{ task['close_reason'] or '-' }}</small>
+  {% endif %}
   <div class="task-footer">
     <small>Bearbeiter:</small>
     <div class="assignee-badges">
@@ -70,7 +73,11 @@
     </div>
   </form>
   {% else %}
+  {% if task['status'] == 'closed' %}
+  <p class="muted">Diese Task ist geschlossen und nur noch lesbar. Nur Admins können sie wieder zurücksetzen.</p>
+  {% else %}
   <p class="muted">Nur zugewiesene Benutzer oder Admins dürfen kommentieren.</p>
+  {% endif %}
   {% endif %}
 
   <div class="comment-list">
@@ -88,7 +95,7 @@
           </div>
         </div>
         <p>{{ comment['content'] }}</p>
-        {% if user['is_admin'] or comment['user_id'] == user['id'] %}
+        {% if task['status'] != 'closed' and (user['is_admin'] or comment['user_id'] == user['id']) %}
         <div class="compact-actions">
           <button
             type="button"

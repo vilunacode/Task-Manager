@@ -387,9 +387,25 @@ button.danger:hover {
   line-height: 1;
 }
 
+.task-open-icon {
+  width: 17px;
+  height: 17px;
+}
+
 .task-open-btn:hover {
   background: #dbf5f2;
   border-color: #9fded8;
+}
+
+.task-open-btn.readonly {
+  color: #475569;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.task-open-btn.readonly:hover {
+  background: #eef2f7;
+  border-color: #b7c4d5;
 }
 
 .task-assigned-to-me {

@@ -12,13 +12,19 @@
         <small>Ansprechpartner: {{ task['contact_person'] }}</small>
         <small>Erstellt am: {{ format_system_datetime(task['created_at']) }}</small>
         <small>Fällig bis: {{ format_datetime(task['due_date']) }}</small>
+        <small>Schließungsgrund: {{ task['close_reason'] or '-' }}</small>
         <small>Erstellt von: {{ task['creator_name'] }}</small>
         <a
-          class="task-open-btn"
+          class="task-open-btn readonly"
           href="{{ url_for('task_detail', task_id=task['id']) }}"
-          title="Task öffnen"
-          aria-label="Task öffnen"
-        >&#9998;</a>
+          title="Task ansehen"
+          aria-label="Task ansehen"
+        >
+          <svg class="task-open-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+            <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle>
+          </svg>
+        </a>
         <div class="status-actions compact-actions">
           <form method="post">
             <input type="hidden" name="action" value="reopen">
