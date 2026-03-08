@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard | Task Manager{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="section-head">
+    <h1>Hallo {{ user['username'] }}</h1>
+    <span class="badge">{{ 'Administrator' if user['is_admin'] else 'Team' }}</span>
+  </div>
+
+  <div class="toolbar-row">
+    <div class="filter-tabs">
+      <a href="{{ url_for('dashboard', filter='all') }}" class="chip {{ 'active' if filter_mode == 'all' else '' }}">Alle Tickets</a>
+      <a href="{{ url_for('dashboard', filter='mine') }}" class="chip {{ 'active' if filter_mode == 'mine' else '' }}">Meine Tickets</a>
+    </div>
+    <button type="button" id="open-create-task">Task erstellen</button>
+  </div>
+</section>
+
+<section class="board">
+  {% for status, tasks in grouped.items() %}
+  <article class="column drop-column" data-status="{{ status }}">
+    <h3>{{ status_label(status) }} <span class="count">{{ tasks|length }}</span></h3>
+    <div class="task-list">
+      {% if tasks %}
+        {% for task in tasks %}
+        {% set assigned_to_me = (task['assignees'] | selectattr('id', 'equalto', user['id']) | list | length > 0) %}
+        {% set due_today = assigned_to_me and is_due_today(task['due_date']) %}
+        <div
+          class="task-card {{ 'task-assigned-to-me' if assigned_to_me else '' }} {{ 'task-due-today' if due_today else '' }} {{ 'draggable-task' if (user['is_admin'] or task['id'] in editable_task_ids) else '' }}"
+          data-task-id="{{ task['id'] }}"
+          data-current-status="{{ status }}"
+          draggable="{{ 'true' if (user['is_admin'] or task['id'] in editable_task_ids) else 'false' }}"
+        >
+          <strong>{{ task['title'] }}</strong>
+          {% if due_today %}
+          <span class="due-today-chip">Heute fällig</span>
+          {% endif %}
+          <small>Ansprechpartner: {{ task['contact_person'] }}</small>
+          <small>Erstellt am: {{ format_datetime(task['created_at']) }}</small>
+          <small>Fällig bis: {{ format_datetime(task['due_date']) }}</small>
+          <small>Erstellt von: {{ task['creator_name'] }}</small>
+          <a class="task-link" href="{{ url_for('task_detail', task_id=task['id']) }}">Task öffnen</a>
+          <div class="task-footer">
+            <small>Bearbeiter:</small>
+            <div class="assignee-badges">
+              {% if task['assignees'] %}
+                {% for assignee in task['assignees'] %}
+                <span class="initial-badge {{ assignee['color_class'] }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
+                {% endfor %}
+              {% else %}
+                <span class="muted">Nicht zugewiesen</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="empty">Keine Tasks</p>
+      {% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</section>
+
+<dialog id="create-task-dialog" class="task-dialog">
+  <form method="post" action="{{ url_for('create_task') }}" class="form-grid two-columns">
+    <div class="dialog-head full">
+      <h2>Neue Task erstellen</h2>
+      <button type="button" class="link-btn" id="close-create-task">Schließen</button>
+    </div>
+    <label>Titel
+      <input type="text" name="title" required>
+    </label>
+    <label>Wer soll es bearbeiten?
+      <select name="assignee_ids" multiple size="6" required>
+        {% for person in users %}
+        <option value="{{ person['id'] }}">{{ person['initials'] }} - {{ person['username'] }}</option>
+        {% endfor %}
+      </select>
+      <small class="muted">Mehrfachauswahl: Strg/Cmd gedrückt halten.</small>
+    </label>
+    <label class="full">Worum geht es?
+      <textarea name="description" rows="3" required></textarea>
+    </label>
+    <label>Fällig bis
+      <input type="datetime-local" name="due_date" required>
+    </label>
+    <label>Ansprechpartner
+      <input type="text" name="contact_person" required>
+    </label>
+    <div class="actions-row">
+      <button type="submit">Task anlegen</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  const dialog = document.getElementById("create-task-dialog");
+  const openBtn = document.getElementById("open-create-task");
+  const closeBtn = document.getElementById("close-create-task");
+  const draggableTasks = document.querySelectorAll(".draggable-task");
+  const dropColumns = document.querySelectorAll(".drop-column");
+  let draggedTask = null;
+
+  openBtn.addEventListener("click", () => dialog.showModal());
+  closeBtn.addEventListener("click", () => dialog.close());
+
+  const submitStatusChange = (taskId, status) => {
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = `/tasks/${taskId}/status`;
+
+    const statusInput = document.createElement("input");
+    statusInput.type = "hidden";
+    statusInput.name = "status";
+    statusInput.value = status;
+
+    const filterInput = document.createElement("input");
+    filterInput.type = "hidden";
+    filterInput.name = "return_filter";
+    filterInput.value = "{{ filter_mode }}";
+
+    form.appendChild(statusInput);
+    form.appendChild(filterInput);
+    document.body.appendChild(form);
+    form.submit();
+  };
+
+  draggableTasks.forEach((task) => {
+    task.addEventListener("dragstart", () => {
+      draggedTask = task;
+      task.classList.add("dragging");
+    });
+
+    task.addEventListener("dragend", () => {
+      task.classList.remove("dragging");
+      draggedTask = null;
+      dropColumns.forEach((column) => column.classList.remove("drop-target"));
+    });
+  });
+
+  dropColumns.forEach((column) => {
+    column.addEventListener("dragover", (event) => {
+      if (!draggedTask) {
+        return;
+      }
+      event.preventDefault();
+      column.classList.add("drop-target");
+    });
+
+    column.addEventListener("dragleave", () => {
+      column.classList.remove("drop-target");
+    });
+
+    column.addEventListener("drop", (event) => {
+      event.preventDefault();
+      column.classList.remove("drop-target");
+      if (!draggedTask) {
+        return;
+      }
+
+      const targetStatus = column.dataset.status;
+      const taskId = draggedTask.dataset.taskId;
+      const currentStatus = draggedTask.dataset.currentStatus;
+
+      if (!taskId || !targetStatus || currentStatus === targetStatus) {
+        return;
+      }
+
+      submitStatusChange(taskId, targetStatus);
+    });
+  });
+</script>
+{% endblock %}

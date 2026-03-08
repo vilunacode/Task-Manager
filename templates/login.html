@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block title %}Login | Task Manager{% endblock %}
+{% block content %}
+<section class="card auth-card">
+  <h1>Willkommen</h1>
+  <p class="subtitle">Bitte melde dich an, um den Task-Manager zu nutzen.</p>
+  <form method="post" class="form-grid">
+    <label>Benutzername
+      <input type="text" name="username" required>
+    </label>
+    <label>Passwort
+      <input type="password" name="password" required>
+    </label>
+    <button type="submit">Anmelden</button>
+  </form>
+</section>
+{% endblock %}

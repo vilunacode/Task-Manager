@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}Geschlossene Tasks | Task Manager{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Geschlossene Tasks prüfen</h1>
+  <p class="subtitle">Als Administrator kannst du geschlossene Tasks zurück ans Team senden oder final löschen.</p>
+
+  <div class="task-list">
+    {% if tasks %}
+      {% for task in tasks %}
+      <article class="task-card">
+        <strong>{{ task['title'] }}</strong>
+        <small>Ansprechpartner: {{ task['contact_person'] }}</small>
+        <small>Erstellt am: {{ format_datetime(task['created_at']) }}</small>
+        <small>Fällig bis: {{ format_datetime(task['due_date']) }}</small>
+        <small>Erstellt von: {{ task['creator_name'] }}</small>
+        <a class="task-link" href="{{ url_for('task_detail', task_id=task['id']) }}">Task öffnen</a>
+        <div class="status-actions compact-actions">
+          <form method="post">
+            <input type="hidden" name="action" value="reopen">
+            <input type="hidden" name="task_id" value="{{ task['id'] }}">
+            <button type="submit" class="secondary small-btn">Zurücksenden</button>
+          </form>
+          <form method="post">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="task_id" value="{{ task['id'] }}">
+            <button type="submit" class="danger small-btn">Endgültig löschen</button>
+          </form>
+        </div>
+        <div class="task-footer">
+          <small>Bearbeiter:</small>
+          <div class="assignee-badges">
+            {% if task['assignees'] %}
+              {% for assignee in task['assignees'] %}
+              <span class="initial-badge {{ assignee['color_class'] }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
+              {% endfor %}
+            {% else %}
+              <span class="muted">Nicht zugewiesen</span>
+            {% endif %}
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+    {% else %}
+      <p class="empty">Aktuell gibt es keine geschlossenen Tasks.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

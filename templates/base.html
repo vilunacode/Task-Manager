@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Task Manager{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <div class="bg-pattern"></div>
+  <header class="topbar">
+    <div class="container topbar-inner">
+      <a class="brand" href="{{ url_for('dashboard') if session.get('user_id') else url_for('login') }}">Task Manager</a>
+      {% if user %}
+      <nav class="nav">
+        <a href="{{ url_for('dashboard') }}">Dashboard</a>
+        {% if user['is_admin'] %}
+        <a href="{{ url_for('manage_users') }}">Benutzer</a>
+        <a href="{{ url_for('admin_closed_tasks') }}">Geschlossene Tasks</a>
+        {% endif %}
+        <form method="post" action="{{ url_for('logout') }}">
+          <button type="submit" class="link-btn">Logout</button>
+        </form>
+      </nav>
+      {% endif %}
+    </div>
+  </header>
+
+  <main class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-stack">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% if user %}
+    <div class="app-layout">
+      <aside class="user-sidebar card">
+        <h3>Team-Kürzel</h3>
+        <div class="user-badge-list">
+          {% for member in sidebar_users %}
+          <div class="user-badge-item" title="{{ member['username'] }} ({{ member['role_label'] }})">
+            <span class="initial-badge {{ member['color_class'] }}">{{ member['initials'] }}</span>
+            <span class="muted">{{ member['username'] }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </aside>
+      <section>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+
+    {% if user %}
+      </section>
+    </div>
+    {% endif %}
+  </main>
+</body>
+</html>

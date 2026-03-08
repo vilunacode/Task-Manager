@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block title %}Initiales Setup | Task Manager{% endblock %}
+{% block content %}
+<section class="card auth-card">
+  <h1>Erstes Setup</h1>
+  <p class="subtitle">Lege den ersten Administrator-Account an.</p>
+  <form method="post" class="form-grid">
+    <label>Admin-Benutzername
+      <input type="text" name="username" required>
+    </label>
+    <label>Kürzel (3 Zeichen)
+      <input type="text" name="initials" minlength="3" maxlength="3" required>
+    </label>
+    <label>Passwort
+      <input type="password" name="password" required>
+    </label>
+    <button type="submit">Administrator erstellen</button>
+  </form>
+</section>
+{% endblock %}

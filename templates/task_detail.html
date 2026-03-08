@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Task #{{ task['id'] }} | Task Manager{% endblock %}
+{% block content %}
+{% if not can_edit_task_content %}
+<section class="card">
+  <div class="section-head">
+    <h2>{{ task['title'] }}</h2>
+    <span class="badge">{{ status_label(task['status']) }}</span>
+  </div>
+  <p>{{ task['description'] }}</p>
+  <small>Ansprechpartner: {{ task['contact_person'] }}</small><br>
+  <small>Erstellt am: {{ format_datetime(task['created_at']) }}</small><br>
+  <small>Fällig bis: {{ format_datetime(task['due_date']) }}</small><br>
+  <small>Erstellt von: {{ task['creator_name'] }}</small>
+  <div class="task-footer">
+    <small>Bearbeiter:</small>
+    <div class="assignee-badges">
+      {% for assignee in task['assignees'] %}
+      <span class="initial-badge {{ assignee['color_class'] }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if can_edit_task_content %}
+<section class="card">
+  <div class="section-head">
+    <h2>Task bearbeiten</h2>
+    <span class="badge">{{ status_label(task['status']) }}</span>
+  </div>
+  <form method="post" action="{{ url_for('edit_task', task_id=task['id']) }}" class="form-grid two-columns task-edit-form">
+    <label class="field-compact">Titel
+      <input type="text" name="title" value="{{ task['title'] }}" required>
+    </label>
+    <label class="field-compact">Bearbeiter
+      <select name="assignee_ids" multiple size="1" class="compact-multi" required>
+        {% set assigned_ids = task['assignees'] | map(attribute='id') | list %}
+        {% for person in users %}
+        <option value="{{ person['id'] }}" {{ 'selected' if person['id'] in assigned_ids else '' }}>
+          {{ person['initials'] }} - {{ person['username'] }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <small class="muted full">Mehrfachauswahl: Strg/Cmd gedrückt halten.</small>
+    <label class="full">Beschreibung
+      <textarea name="description" rows="4" required>{{ task['description'] }}</textarea>
+    </label>
+    <label>Fällig bis
+      <input type="datetime-local" name="due_date" value="{{ datetime_input_value(task['due_date']) }}" required>
+    </label>
+    <div class="actions-row">
+      <button type="submit">Änderungen speichern</button>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Kommentare</h2>
+
+  {% if can_comment %}
+  <form method="post" action="{{ url_for('add_task_comment', task_id=task['id']) }}" class="form-grid">
+    <label>Kommentar
+      <textarea name="content" rows="3" required></textarea>
+    </label>
+    <div class="actions-row">
+      <button type="submit">Kommentar senden</button>
+    </div>
+  </form>
+  {% else %}
+  <p class="muted">Nur zugewiesene Benutzer oder Admins dürfen kommentieren.</p>
+  {% endif %}
+
+  <div class="comment-list">
+    {% if task['comments'] %}
+      {% for comment in task['comments'] %}
+      <article class="comment-card">
+        <div class="comment-head">
+          <span class="initial-badge {{ comment['color_class'] }}">{{ comment['initials'] }}</span>
+          <div>
+            <strong>{{ comment['username'] }}</strong><br>
+            <small class="muted">{{ comment['created_at'] }}</small>
+          </div>
+        </div>
+        <p>{{ comment['content'] }}</p>
+      </article>
+      {% endfor %}
+    {% else %}
+      <p class="empty">Noch keine Kommentare vorhanden.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

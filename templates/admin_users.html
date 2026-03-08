@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}Benutzerverwaltung | Task Manager{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Benutzerverwaltung</h1>
+  <form method="post" class="form-grid two-columns">
+    <input type="hidden" name="action" value="create">
+    <label>Benutzername
+      <input type="text" name="username" required>
+    </label>
+    <label>Kürzel (3 Zeichen)
+      <input type="text" name="initials" minlength="3" maxlength="3" required>
+    </label>
+    <label>Passwort
+      <input type="password" name="password" required>
+    </label>
+    <label>Rolle
+      <select name="role" required>
+        <option value="admin">Admin</option>
+        <option value="team">Team</option>
+        <option value="application_developer">Anwendungsentwickler</option>
+        <option value="system_integrator">Systemintegrator</option>
+      </select>
+    </label>
+    <div class="actions-row">
+      <button type="submit">Benutzer hinzufügen</button>
+    </div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Vorhandene Benutzer</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Kürzel</th>
+          <th>Rolle</th>
+          <th>Aktion</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for account in users %}
+        <tr>
+          <td>{{ account['username'] }}</td>
+          <td>
+            <span class="initial-badge {{ 'badge-admin' if account['is_admin'] else ('badge-system' if account['role'] == 'system_integrator' else ('badge-team' if account['role'] == 'team' else 'badge-dev')) }}">{{ account['initials'] }}</span>
+          </td>
+          <td>{{ 'Admin' if account['is_admin'] else ('Systemintegrator' if account['role'] == 'system_integrator' else ('Team' if account['role'] == 'team' else 'Anwendungsentwickler')) }}</td>
+          <td>
+            {% if account['id'] != user['id'] %}
+            <form method="post">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="user_id" value="{{ account['id'] }}">
+              <button type="submit" class="danger">Entfernen</button>
+            </form>
+            {% else %}
+            <span class="muted">Aktueller Account</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

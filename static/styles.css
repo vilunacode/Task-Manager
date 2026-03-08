@@ -1,0 +1,537 @@
+:root {
+  --bg: #f4f1ea;
+  --card: #fffdf8;
+  --text: #1f2933;
+  --muted: #5c6b7a;
+  --brand: #0f766e;
+  --brand-dark: #115e59;
+  --danger: #b42318;
+  --danger-dark: #7a271a;
+  --line: #d9e2ec;
+  --shadow: 0 12px 30px rgba(17, 24, 39, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: var(--text);
+  background: linear-gradient(180deg, #f8f5ef 0%, #ece7dc 100%);
+  min-height: 100vh;
+}
+
+.bg-pattern {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle at 10% 20%, rgba(15, 118, 110, 0.08) 0, transparent 22%),
+    radial-gradient(circle at 90% 10%, rgba(180, 35, 24, 0.06) 0, transparent 18%);
+  z-index: -1;
+}
+
+.container {
+  width: min(1100px, 92vw);
+  margin: 0 auto;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(255, 253, 248, 0.9);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 0;
+}
+
+.brand {
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.nav a {
+  text-decoration: none;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+main.container {
+  padding: 26px 0 48px;
+}
+
+.app-layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.user-sidebar {
+  position: sticky;
+  top: 84px;
+}
+
+.user-badge-list {
+  display: grid;
+  gap: 10px;
+}
+
+.user-badge-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.initial-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  flex: 0 0 38px;
+}
+
+.badge-admin {
+  background: #facc15;
+}
+
+.badge-system {
+  background: #dc2626;
+}
+
+.badge-dev {
+  background: #2563eb;
+}
+
+.badge-team {
+  background: #0f766e;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.auth-card {
+  max-width: 500px;
+  margin: 40px auto;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin-top: -4px;
+}
+
+h1,
+h2,
+h3 {
+  margin-top: 0;
+}
+
+.form-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.two-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+
+input,
+textarea,
+select {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+button {
+  border: none;
+  border-radius: 10px;
+  background: var(--brand);
+  color: #fff;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--brand-dark);
+}
+
+button.secondary {
+  background: #334155;
+}
+
+button.secondary:hover {
+  background: #1e293b;
+}
+
+button.danger {
+  background: var(--danger);
+}
+
+button.danger:hover {
+  background: var(--danger-dark);
+}
+
+.link-btn {
+  background: none;
+  color: var(--muted);
+  padding: 0;
+  border-radius: 0;
+}
+
+.link-btn:hover {
+  background: none;
+  color: var(--text);
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.badge {
+  background: #d1fae5;
+  color: #065f46;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.full {
+  grid-column: 1 / -1;
+}
+
+.actions-row {
+  align-self: end;
+  justify-self: start;
+}
+
+.toolbar-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 12px;
+  text-decoration: none;
+  color: var(--muted);
+  background: #fff;
+  font-weight: 600;
+}
+
+.chip.active {
+  border-color: var(--brand);
+  background: #dbf5f2;
+  color: #0b5953;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.column {
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.drop-column.drop-target {
+  border-color: var(--brand);
+  box-shadow: inset 0 0 0 2px rgba(15, 118, 110, 0.2);
+}
+
+.count {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.task-list {
+  display: grid;
+  gap: 10px;
+}
+
+.task-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+
+.task-card.draggable-task {
+  cursor: grab;
+}
+
+.task-card.dragging {
+  opacity: 0.6;
+}
+
+.task-link {
+  display: inline-block;
+  margin-top: 2px;
+  color: var(--brand-dark);
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.task-link:hover {
+  text-decoration: underline;
+}
+
+.task-assigned-to-me {
+  border-color: #5bbeb5;
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.16);
+}
+
+.task-due-today {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.22);
+  background: linear-gradient(180deg, #fffaf0 0%, #ffffff 100%);
+}
+
+.due-today-chip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: #f59e0b;
+  color: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.assignee-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.task-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  display: grid;
+  gap: 6px;
+}
+
+.task-card p {
+  margin: 2px 0;
+}
+
+.task-card small {
+  color: var(--muted);
+}
+
+.empty,
+.muted {
+  color: var(--muted);
+}
+
+.checkline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkline input {
+  width: auto;
+}
+
+.flash-stack {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.flash {
+  border-radius: 10px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  font-weight: 600;
+}
+
+.flash.success {
+  color: #065f46;
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+}
+
+.flash.error {
+  color: #7f1d1d;
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.task-dialog {
+  width: min(760px, 95vw);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.task-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.dialog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.comment-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.comment-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px;
+}
+
+.comment-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.compact-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.compact-actions form {
+  margin: 0;
+}
+
+.small-btn {
+  padding: 6px 10px;
+  font-size: 0.84rem;
+  line-height: 1.1;
+}
+
+.task-edit-form {
+  gap: 10px 14px;
+}
+
+.task-edit-form .field-compact {
+  gap: 4px;
+}
+
+.task-edit-form input[type="text"] {
+  height: 38px;
+  padding: 8px 10px;
+}
+
+.task-edit-form .compact-multi {
+  height: 38px;
+  min-height: 38px;
+  padding: 6px 10px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 8px;
+}
+
+@media (max-width: 900px) {
+  .app-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .user-sidebar {
+    position: static;
+  }
+
+  .board {
+    grid-template-columns: 1fr;
+  }
+
+  .two-columns {
+    grid-template-columns: 1fr;
+  }
+}
