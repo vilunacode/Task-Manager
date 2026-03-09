@@ -454,6 +454,10 @@ body[data-theme="dark"] .column {
   width: 100%;
 }
 
+.closed-task-grid .empty {
+  grid-column: 1 / -1;
+}
+
 .task-card {
   border: 1px solid var(--line);
   border-radius: 12px;
