@@ -9,6 +9,8 @@
       {% for task in tasks %}
       <article class="task-card">
         <strong>{{ task['title'] }}</strong>
+        <small>Kategorie: {{ ticket_category_label(task['ticket_category']) }}</small>
+        <small>Raum: {{ task['room'] or '-' }}</small>
         <small>Ansprechpartner: {{ task['contact_person'] }}</small>
         <small>Erstellt am: {{ format_system_datetime(task['created_at']) }}</small>
         <small>Fällig bis: {{ format_datetime(task['due_date']) }}</small>

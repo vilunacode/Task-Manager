@@ -26,6 +26,36 @@ STATUS_OPEN = "open"
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_CLOSED = "closed"
 VALID_STATUSES = {STATUS_OPEN, STATUS_IN_PROGRESS, STATUS_CLOSED}
+VALID_DASHBOARD_FILTERS = {"all", "mine", "pings"}
+VALID_PING_TABS = {"unread", "read"}
+MIN_TASK_PRIORITY = 1
+MAX_TASK_PRIORITY = 5
+DEFAULT_TASK_PRIORITY = 3
+TICKET_CATEGORY_HARDWARE = "hardware"
+TICKET_CATEGORY_SOFTWARE = "software"
+TICKET_CATEGORY_NETWORK_INTERNET = "network_internet"
+TICKET_CATEGORY_SECURITY = "security"
+TICKET_CATEGORY_IT_SERVICE_ORDER = "it_service_order"
+TICKET_CATEGORY_WORKSTATION_SETUP = "workstation_setup"
+TICKET_CATEGORY_OTHER = "other"
+VALID_TICKET_CATEGORIES = {
+    TICKET_CATEGORY_HARDWARE,
+    TICKET_CATEGORY_SOFTWARE,
+    TICKET_CATEGORY_NETWORK_INTERNET,
+    TICKET_CATEGORY_SECURITY,
+    TICKET_CATEGORY_IT_SERVICE_ORDER,
+    TICKET_CATEGORY_WORKSTATION_SETUP,
+    TICKET_CATEGORY_OTHER,
+}
+TICKET_CATEGORY_LABELS = {
+    TICKET_CATEGORY_HARDWARE: "Hardware",
+    TICKET_CATEGORY_SOFTWARE: "Software",
+    TICKET_CATEGORY_NETWORK_INTERNET: "Netzwerk / Internet",
+    TICKET_CATEGORY_SECURITY: "Sicherheit",
+    TICKET_CATEGORY_IT_SERVICE_ORDER: "IT-Service / Bestellung",
+    TICKET_CATEGORY_WORKSTATION_SETUP: "Arbeitsplatz / Setup",
+    TICKET_CATEGORY_OTHER: "Sonstiges",
+}
 ROLE_SYSTEM_INTEGRATOR = "system_integrator"
 ROLE_APPLICATION_DEVELOPER = "application_developer"
 ROLE_TEAM = "team"
@@ -81,6 +111,10 @@ VALID_THEME_MODES = {THEME_LIGHT, THEME_DARK}
 CARD_VIEW_COMPACT = "compact"
 CARD_VIEW_EXTENDED = "extended"
 VALID_CARD_VIEW_MODES = {CARD_VIEW_COMPACT, CARD_VIEW_EXTENDED}
+MEMBER_TYPE_REGULAR = "regular"
+MEMBER_TYPE_TRAINEE = "trainee"
+VALID_MEMBER_TYPES = {MEMBER_TYPE_REGULAR, MEMBER_TYPE_TRAINEE}
+MAX_USERNAME_LENGTH = 13
 
 
 app = Flask(__name__)
@@ -122,6 +156,7 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             description TEXT NOT NULL,
+            priority INTEGER NOT NULL DEFAULT 3,
             assignee_id INTEGER,
             due_date TEXT,
             contact_person TEXT NOT NULL,
@@ -150,6 +185,24 @@ def init_db() -> None:
             updated_at TEXT,
             FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS task_comment_mentions (
+            comment_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (comment_id, user_id),
+            FOREIGN KEY (comment_id) REFERENCES task_comments(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS user_ping_reads (
+            user_id INTEGER NOT NULL,
+            comment_id INTEGER NOT NULL,
+            read_at TEXT NOT NULL,
+            PRIMARY KEY (user_id, comment_id),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (comment_id) REFERENCES task_comments(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS app_settings (
@@ -195,6 +248,14 @@ def init_db() -> None:
         db.execute(
             f"ALTER TABLE users ADD COLUMN card_view_mode TEXT NOT NULL DEFAULT '{CARD_VIEW_COMPACT}'"
         )
+    if "last_seen_ping_at" not in columns:
+        db.execute("ALTER TABLE users ADD COLUMN last_seen_ping_at TEXT")
+    if "is_inactive" not in columns:
+        db.execute("ALTER TABLE users ADD COLUMN is_inactive INTEGER NOT NULL DEFAULT 0")
+    if "member_type" not in columns:
+        db.execute(f"ALTER TABLE users ADD COLUMN member_type TEXT NOT NULL DEFAULT '{MEMBER_TYPE_REGULAR}'")
+    if "is_dashboard_invisible" not in columns:
+        db.execute("ALTER TABLE users ADD COLUMN is_dashboard_invisible INTEGER NOT NULL DEFAULT 0")
 
     task_columns = {row["name"] for row in db.execute("PRAGMA table_info(tasks)").fetchall()}
     if "due_date" not in task_columns:
@@ -207,6 +268,14 @@ def init_db() -> None:
         db.execute("ALTER TABLE tasks ADD COLUMN closed_by INTEGER")
     if "contact_person_user_id" not in task_columns:
         db.execute("ALTER TABLE tasks ADD COLUMN contact_person_user_id INTEGER")
+    if "ticket_category" not in task_columns:
+        db.execute(
+            f"ALTER TABLE tasks ADD COLUMN ticket_category TEXT NOT NULL DEFAULT '{TICKET_CATEGORY_OTHER}'"
+        )
+    if "room" not in task_columns:
+        db.execute("ALTER TABLE tasks ADD COLUMN room TEXT")
+    if "priority" not in task_columns:
+        db.execute(f"ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT {DEFAULT_TASK_PRIORITY}")
 
     comment_columns = {row["name"] for row in db.execute("PRAGMA table_info(task_comments)").fetchall()}
     if "updated_at" not in comment_columns:
@@ -218,6 +287,26 @@ def init_db() -> None:
         SET due_date = substr(created_at, 1, 16)
         WHERE due_date IS NULL OR TRIM(due_date) = ''
         """
+    )
+
+    db.execute(
+        """
+        UPDATE tasks
+        SET ticket_category = ?
+        WHERE ticket_category IS NULL OR TRIM(ticket_category) = ''
+        """,
+        (TICKET_CATEGORY_OTHER,),
+    )
+
+    valid_categories = tuple(sorted(VALID_TICKET_CATEGORIES))
+    placeholders = ",".join(["?"] * len(valid_categories))
+    db.execute(
+        f"""
+        UPDATE tasks
+        SET ticket_category = ?
+        WHERE lower(ticket_category) NOT IN ({placeholders})
+        """,
+        (TICKET_CATEGORY_OTHER, *valid_categories),
     )
 
     # Backfill contact_person_user_id for legacy rows where contact person was stored as plain text.
@@ -570,6 +659,25 @@ def normalize_role(value: str) -> str:
     return ""
 
 
+def normalize_ticket_category(value: str) -> str:
+    normalized = value.strip().lower()
+    if normalized in VALID_TICKET_CATEGORIES:
+        return normalized
+    return ""
+
+
+def ticket_category_label(value: str | None) -> str:
+    normalized = (value or "").strip().lower()
+    return TICKET_CATEGORY_LABELS.get(normalized, TICKET_CATEGORY_LABELS[TICKET_CATEGORY_OTHER])
+
+
+def ticket_category_options() -> list[dict[str, str]]:
+    return [
+        {"value": key, "label": label}
+        for key, label in TICKET_CATEGORY_LABELS.items()
+    ]
+
+
 def role_label(role: str, is_admin: int) -> str:
     if is_admin:
         return "Admin"
@@ -668,7 +776,8 @@ def task_assignees_map(task_ids: list[int]):
             u.is_admin
         FROM task_assignees ta
         JOIN users u ON u.id = ta.user_id
-        WHERE ta.task_id IN ({placeholders})
+                WHERE ta.task_id IN ({placeholders})
+                    AND COALESCE(u.is_dashboard_invisible, 0) = 0
         ORDER BY u.is_admin DESC, u.username ASC
         """,
         tuple(task_ids),
@@ -729,18 +838,24 @@ def sidebar_users():
             u.initials,
             u.role,
             u.is_admin,
+            u.is_inactive,
+                        u.member_type,
             COUNT(ta.task_id) AS assigned_task_count
         FROM users u
         LEFT JOIN task_assignees ta ON ta.user_id = u.id
-        GROUP BY u.id, u.username, u.initials, u.role, u.is_admin
-        ORDER BY is_admin DESC,
-          CASE role
+        WHERE COALESCE(u.is_dashboard_invisible, 0) = 0
+                GROUP BY u.id, u.username, u.initials, u.role, u.is_admin, u.is_inactive, u.member_type
+        ORDER BY
+          u.is_inactive ASC,
+                    CASE u.member_type WHEN 'trainee' THEN 0 ELSE 1 END ASC,
+                    u.is_admin DESC,
+          CASE u.role
             WHEN ? THEN 0
             WHEN ? THEN 1
-                        WHEN ? THEN 2
-                        ELSE 3
+            WHEN ? THEN 2
+            ELSE 3
           END,
-          username ASC
+          u.username ASC
         """,
                 (ROLE_TEAM, ROLE_SYSTEM_INTEGRATOR, ROLE_APPLICATION_DEVELOPER),
     )
@@ -752,6 +867,8 @@ def sidebar_users():
             "role_label": role_label(row["role"], row["is_admin"]),
             "color_class": badge_color_class(row["role"], row["is_admin"]),
             "assigned_task_count": int(row["assigned_task_count"] or 0),
+            "is_inactive": bool(row["is_inactive"]),
+            "member_type": row["member_type"] or MEMBER_TYPE_REGULAR,
         }
         for row in rows
     ]
@@ -1002,6 +1119,156 @@ def assigned_task_ids_for_user(user_id: int):
     return {row["task_id"] for row in rows}
 
 
+def ping_comment_map_for_user(user) -> dict[int, int]:
+    user_id = int(user["id"])
+    username = (user["username"] or "").strip()
+    comment_to_task: dict[int, int] = {}
+
+    structured_rows = query_all(
+        """
+        SELECT tc.id AS comment_id, tc.task_id
+        FROM task_comment_mentions tcm
+        JOIN task_comments tc ON tc.id = tcm.comment_id
+        WHERE tcm.user_id = ?
+        """,
+        (user_id,),
+    )
+    for row in structured_rows:
+        comment_to_task[int(row["comment_id"])] = int(row["task_id"])
+
+    if not username:
+        return comment_to_task
+
+    mention_pattern = re.compile(
+        rf"(?<![A-Za-z0-9_])@{re.escape(username)}(?![A-Za-z0-9_])",
+        re.IGNORECASE,
+    )
+    legacy_rows = query_all(
+        """
+        SELECT id AS comment_id, task_id, content
+        FROM task_comments
+        WHERE content LIKE '%@%'
+        """
+    )
+    for row in legacy_rows:
+        comment_id = int(row["comment_id"])
+        if comment_id in comment_to_task:
+            continue
+        content = row["content"] or ""
+        if mention_pattern.search(content):
+            comment_to_task[comment_id] = int(row["task_id"])
+    return comment_to_task
+
+
+def read_ping_comment_ids_for_user(user_id: int) -> set[int]:
+    rows = query_all(
+        "SELECT comment_id FROM user_ping_reads WHERE user_id = ?",
+        (user_id,),
+    )
+    return {int(row["comment_id"]) for row in rows}
+
+
+def ping_task_sets_for_user(user) -> tuple[set[int], set[int]]:
+    comment_map = ping_comment_map_for_user(user)
+    if not comment_map:
+        return set(), set()
+
+    read_ids = read_ping_comment_ids_for_user(int(user["id"]))
+    all_task_ids = {task_id for task_id in comment_map.values()}
+    unread_task_ids = {
+        task_id
+        for comment_id, task_id in comment_map.items()
+        if comment_id not in read_ids
+    }
+    read_task_ids = all_task_ids - unread_task_ids
+    return unread_task_ids, read_task_ids
+
+
+def unread_ping_count_for_user(user) -> int:
+    unread_task_ids, _ = ping_task_sets_for_user(user)
+    return len(unread_task_ids)
+
+
+def mark_ping_task_as_read(user, task_id: int) -> None:
+    comment_map = ping_comment_map_for_user(user)
+    target_comment_ids = [
+        comment_id
+        for comment_id, mapped_task_id in comment_map.items()
+        if mapped_task_id == int(task_id)
+    ]
+    if not target_comment_ids:
+        return
+
+    read_at = now_iso()
+    for comment_id in target_comment_ids:
+        execute(
+            """
+            INSERT INTO user_ping_reads (user_id, comment_id, read_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, comment_id) DO UPDATE SET read_at = excluded.read_at
+            """,
+            (int(user["id"]), int(comment_id), read_at),
+        )
+
+
+def mark_ping_task_as_unread(user, task_id: int) -> int:
+    comment_map = ping_comment_map_for_user(user)
+    target_comment_ids = [
+        comment_id
+        for comment_id, mapped_task_id in comment_map.items()
+        if mapped_task_id == int(task_id)
+    ]
+    if not target_comment_ids:
+        return 0
+
+    removed = 0
+    for comment_id in target_comment_ids:
+        cur = execute(
+            "DELETE FROM user_ping_reads WHERE user_id = ? AND comment_id = ?",
+            (int(user["id"]), int(comment_id)),
+        )
+        removed += int(cur.rowcount or 0)
+    return removed
+
+
+def mark_all_pings_as_read_for_user(user) -> int:
+    comment_map = ping_comment_map_for_user(user)
+    if not comment_map:
+        return 0
+
+    read_ids = read_ping_comment_ids_for_user(int(user["id"]))
+    unread_comment_ids = [comment_id for comment_id in comment_map if comment_id not in read_ids]
+    if not unread_comment_ids:
+        return 0
+
+    read_at = now_iso()
+    for comment_id in unread_comment_ids:
+        execute(
+            """
+            INSERT INTO user_ping_reads (user_id, comment_id, read_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id, comment_id) DO UPDATE SET read_at = excluded.read_at
+            """,
+            (int(user["id"]), int(comment_id), read_at),
+        )
+
+    return len(unread_comment_ids)
+
+
+def dashboard_tasks_for_filter(user, filter_mode: str, ping_tab: str = "unread"):
+    if filter_mode == "mine":
+        return fetch_tasks(only_assigned_to=user["id"])
+
+    tasks = fetch_tasks()
+    if filter_mode == "pings":
+        unread_task_ids, read_task_ids = ping_task_sets_for_user(user)
+        pinged_ids = unread_task_ids if ping_tab == "unread" else read_task_ids
+        if not pinged_ids:
+            return []
+        return [task for task in tasks if int(task["id"]) in pinged_ids]
+    return tasks
+
+
 def sync_task_primary_assignee(task_id: int):
     row = query_one(
         "SELECT user_id FROM task_assignees WHERE task_id = ? ORDER BY user_id ASC LIMIT 1",
@@ -1076,6 +1343,8 @@ def inject_helpers():
         closed_task_count = closed_task_count_for_admin(user)
     return {
         "status_label": status_label,
+        "ticket_category_label": ticket_category_label,
+        "ticket_category_options": ticket_category_options(),
         "sidebar_users": badges,
         "format_datetime": format_datetime_for_display,
         "format_system_datetime": format_system_datetime_for_display,
@@ -1110,6 +1379,10 @@ def setup():
 
         if not username or not password:
             flash("Benutzername und Passwort sind erforderlich.", "error")
+            return render_template("setup.html")
+
+        if len(username) > MAX_USERNAME_LENGTH:
+            flash(f"Benutzername darf maximal {MAX_USERNAME_LENGTH} Zeichen lang sein.", "error")
             return render_template("setup.html")
 
         initials = normalize_initials(request.form.get("initials", ""))
@@ -1179,17 +1452,24 @@ def logout():
 def dashboard():
     user = current_user()
     filter_mode = request.args.get("filter", "all").strip().lower()
-    if filter_mode not in {"all", "mine"}:
+    if filter_mode not in VALID_DASHBOARD_FILTERS:
         filter_mode = "all"
+
+    ping_tab = request.args.get("ping_tab", "unread").strip().lower()
+    if ping_tab not in VALID_PING_TABS:
+        ping_tab = "unread"
+
+    ping_unread_count = unread_ping_count_for_user(user)
 
     users = query_all(
         """
         SELECT id, username, initials, role, is_admin
         FROM users
+        WHERE COALESCE(is_dashboard_invisible, 0) = 0
         ORDER BY is_admin DESC, username ASC
         """
     )
-    tasks = fetch_tasks(only_assigned_to=user["id"] if filter_mode == "mine" else None)
+    tasks = dashboard_tasks_for_filter(user, filter_mode, ping_tab)
     tasks = enrich_tasks_with_assignees(tasks)
     tasks = [
         {
@@ -1215,7 +1495,9 @@ def dashboard():
         users=users,
         grouped=grouped,
         filter_mode=filter_mode,
+        ping_tab=ping_tab,
         editable_task_ids=editable_task_ids,
+        ping_unread_count=ping_unread_count,
     )
 
 
@@ -1267,10 +1549,14 @@ def overview_tasks_api():
 def dashboard_tasks_api():
     user = current_user()
     filter_mode = request.args.get("filter", "all").strip().lower()
-    if filter_mode not in {"all", "mine"}:
+    if filter_mode not in VALID_DASHBOARD_FILTERS:
         filter_mode = "all"
 
-    tasks = fetch_tasks(only_assigned_to=user["id"] if filter_mode == "mine" else None)
+    ping_tab = request.args.get("ping_tab", "unread").strip().lower()
+    if ping_tab not in VALID_PING_TABS:
+        ping_tab = "unread"
+
+    tasks = dashboard_tasks_for_filter(user, filter_mode, ping_tab)
     tasks = enrich_tasks_with_assignees(tasks)
     editable_task_ids = set() if user["is_admin"] else assigned_task_ids_for_user(user["id"])
 
@@ -1291,6 +1577,10 @@ def dashboard_tasks_api():
                 "status": task["status"],
                 "created_at": task["created_at"],
                 "due_date_display": format_datetime_for_display(task["due_date"]),
+                "priority": int(task.get("priority") or DEFAULT_TASK_PRIORITY),
+                "ticket_category": task.get("ticket_category", ""),
+                "ticket_category_label": ticket_category_label(task.get("ticket_category", "")),
+                "room": task.get("room", "") or "",
                 "contact_person": task.get("contact_person", ""),
                 "contact_person_badge": contact_person_badge(task),
                 "creator_name": task.get("creator_name", ""),
@@ -1678,12 +1968,29 @@ def create_task():
     title = request.form.get("title", "").strip()
     description = request.form.get("description", "").strip()
     contact_person_user_id_raw = request.form.get("contact_person_user_id", "").strip()
+    ticket_category = normalize_ticket_category(request.form.get("ticket_category", ""))
+    room = request.form.get("room", "").strip()
     due_date = request.form.get("due_date", "").strip()
     due_time = request.form.get("due_time", "").strip()
+    priority_raw = request.form.get("priority", str(DEFAULT_TASK_PRIORITY)).strip()
     assignee_ids_raw = request.form.getlist("assignee_ids")
 
     if not title or not description or not due_date:
         flash("Bitte alle Pflichtfelder ausfüllen.", "error")
+        return redirect(url_for("dashboard"))
+
+    if not ticket_category:
+        flash("Bitte eine gültige Ticket-Kategorie auswählen.", "error")
+        return redirect(url_for("dashboard"))
+
+    try:
+        priority = int(priority_raw)
+    except ValueError:
+        flash("Bitte eine gültige Priorität (1-5) auswählen.", "error")
+        return redirect(url_for("dashboard"))
+
+    if priority < MIN_TASK_PRIORITY or priority > MAX_TASK_PRIORITY:
+        flash("Bitte eine gültige Priorität (1-5) auswählen.", "error")
         return redirect(url_for("dashboard"))
 
     try:
@@ -1693,7 +2000,7 @@ def create_task():
         return redirect(url_for("dashboard"))
 
     contact_user = query_one(
-        "SELECT id, username FROM users WHERE id = ?",
+        "SELECT id, username FROM users WHERE id = ? AND COALESCE(is_dashboard_invisible, 0) = 0",
         (contact_person_user_id,),
     )
     if contact_user is None:
@@ -1718,7 +2025,10 @@ def create_task():
     assignee_ids = sorted(set(assignee_ids))
     if assignee_ids:
         placeholders = ",".join(["?"] * len(assignee_ids))
-        found = query_all(f"SELECT id FROM users WHERE id IN ({placeholders})", tuple(assignee_ids))
+        found = query_all(
+            f"SELECT id FROM users WHERE id IN ({placeholders}) AND COALESCE(is_dashboard_invisible, 0) = 0",
+            tuple(assignee_ids),
+        )
         if len(found) != len(assignee_ids):
             flash("Mindestens ein ausgewählter Bearbeiter existiert nicht.", "error")
             return redirect(url_for("dashboard"))
@@ -1729,24 +2039,30 @@ def create_task():
         INSERT INTO tasks (
             title,
             description,
+            priority,
             assignee_id,
             due_date,
             contact_person,
             contact_person_user_id,
+            ticket_category,
+            room,
             created_by,
             status,
             created_at,
             updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             title,
             description,
+            priority,
             assignee_ids[0] if assignee_ids else None,
             normalized_due_date,
             contact_user["username"],
             contact_person_user_id,
+            ticket_category,
+            room,
             user["id"],
             STATUS_OPEN,
             now,
@@ -1818,6 +2134,42 @@ def task_comments(task_id: int):
     )
 
 
+def comment_mentions_map(comment_ids: list[int]):
+    if not comment_ids:
+        return {}
+
+    placeholders = ",".join(["?"] * len(comment_ids))
+    rows = query_all(
+        f"""
+        SELECT
+            tcm.comment_id,
+            u.id,
+            u.username,
+            u.initials,
+            u.role,
+            u.is_admin
+        FROM task_comment_mentions tcm
+        JOIN users u ON u.id = tcm.user_id
+        WHERE tcm.comment_id IN ({placeholders})
+        ORDER BY u.is_admin DESC, u.username ASC
+        """,
+        tuple(comment_ids),
+    )
+
+    mapping = {comment_id: [] for comment_id in comment_ids}
+    for row in rows:
+        mapping[row["comment_id"]].append(
+            {
+                "id": int(row["id"]),
+                "username": row["username"],
+                "initials": row["initials"] or make_initials_from_username(row["username"]),
+                "role_label": role_label(row["role"], row["is_admin"]),
+                "color_class": badge_color_class(row["role"], row["is_admin"]),
+            }
+        )
+    return mapping
+
+
 def task_with_details(task_id: int):
     task = query_one(
         """
@@ -1848,8 +2200,10 @@ def task_with_details(task_id: int):
         task_dict["contact_person_display"] = "-"
 
     assignees = task_assignees_map([task_id]).get(task_id, [])
+    raw_comments = task_comments(task_id)
+    mentions_by_comment_id = comment_mentions_map([int(comment["id"]) for comment in raw_comments])
     comments = []
-    for comment in task_comments(task_id):
+    for comment in raw_comments:
         created_at = format_system_datetime_for_display(comment["created_at"])
         updated_raw = comment["updated_at"]
         updated_at = format_system_datetime_for_display(updated_raw) if updated_raw else ""
@@ -1865,6 +2219,7 @@ def task_with_details(task_id: int):
                 "initials": comment["initials"] or make_initials_from_username(comment["username"]),
                 "role_label": role_label(comment["role"], comment["is_admin"]),
                 "color_class": badge_color_class(comment["role"], comment["is_admin"]),
+                "mentions": mentions_by_comment_id.get(int(comment["id"]), []),
             }
         )
 
@@ -1879,7 +2234,7 @@ def update_task_status(task_id: int):
     user = current_user()
     new_status = request.form.get("status", "").strip()
     return_filter = request.form.get("return_filter", "all").strip().lower()
-    if return_filter not in {"all", "mine"}:
+    if return_filter not in VALID_DASHBOARD_FILTERS:
         return_filter = "all"
 
     if new_status not in VALID_STATUSES:
@@ -1933,7 +2288,7 @@ def update_task_status(task_id: int):
 def add_task_assignee(task_id: int):
     user = current_user()
     return_filter = request.form.get("return_filter", "all").strip().lower()
-    if return_filter not in {"all", "mine"}:
+    if return_filter not in VALID_DASHBOARD_FILTERS:
         return_filter = "all"
 
     task = query_one("SELECT id, status FROM tasks WHERE id = ?", (task_id,))
@@ -1952,7 +2307,10 @@ def add_task_assignee(task_id: int):
         flash("Ungültiger Benutzer.", "error")
         return redirect(url_for("dashboard", filter=return_filter))
 
-    assignee = query_one("SELECT id FROM users WHERE id = ?", (assignee_user_id,))
+    assignee = query_one(
+        "SELECT id FROM users WHERE id = ? AND COALESCE(is_dashboard_invisible, 0) = 0",
+        (assignee_user_id,),
+    )
     if assignee is None:
         flash("Benutzer nicht gefunden.", "error")
         return redirect(url_for("dashboard", filter=return_filter))
@@ -1975,6 +2333,62 @@ def add_task_assignee(task_id: int):
     return redirect(url_for("dashboard", filter=return_filter))
 
 
+@app.route("/pings/mark-all-read", methods=["POST"])
+@login_required
+def mark_all_pings_read():
+    user = current_user()
+    marked_count = mark_all_pings_as_read_for_user(user)
+    if marked_count > 0:
+        flash("Alle ungelesenen Pings wurden als gelesen markiert.", "success")
+    else:
+        flash("Es gibt keine ungelesenen Pings.", "success")
+    return redirect(url_for("dashboard", filter="pings", ping_tab="unread"))
+
+
+@app.route("/tasks/<int:task_id>/pings/mark-unread", methods=["POST"])
+@login_required
+def mark_task_ping_unread(task_id: int):
+    user = current_user()
+    ping_tab = request.form.get("ping_tab", "read").strip().lower()
+    if ping_tab not in VALID_PING_TABS:
+        ping_tab = "read"
+
+    task = query_one("SELECT id FROM tasks WHERE id = ?", (task_id,))
+    if task is None:
+        flash("Task nicht gefunden.", "error")
+        return redirect(url_for("dashboard", filter="pings", ping_tab=ping_tab))
+
+    removed_count = mark_ping_task_as_unread(user, task_id)
+    if removed_count > 0:
+        flash("Ping wurde auf ungelesen gesetzt.", "success")
+    else:
+        flash("Für diese Task gibt es keinen gelesenen Ping zum Zurücksetzen.", "error")
+    return redirect(url_for("dashboard", filter="pings", ping_tab=ping_tab))
+
+
+@app.route("/tasks/<int:task_id>/pings/mark-read", methods=["POST"])
+@login_required
+def mark_task_ping_read(task_id: int):
+    user = current_user()
+    ping_tab = request.form.get("ping_tab", "unread").strip().lower()
+    if ping_tab not in VALID_PING_TABS:
+        ping_tab = "unread"
+
+    task = query_one("SELECT id FROM tasks WHERE id = ?", (task_id,))
+    if task is None:
+        flash("Task nicht gefunden.", "error")
+        return redirect(url_for("dashboard", filter="pings", ping_tab=ping_tab))
+
+    unread_before, _ = ping_task_sets_for_user(user)
+    if int(task_id) not in unread_before:
+        flash("Für diese Task gibt es keinen ungelesenen Ping.", "error")
+        return redirect(url_for("dashboard", filter="pings", ping_tab=ping_tab))
+
+    mark_ping_task_as_read(user, task_id)
+    flash("Ping wurde auf gelesen gesetzt.", "success")
+    return redirect(url_for("dashboard", filter="pings", ping_tab=ping_tab))
+
+
 @app.route("/tasks/<int:task_id>")
 @login_required
 def task_detail(task_id: int):
@@ -1992,6 +2406,7 @@ def task_detail(task_id: int):
         """
         SELECT id, username, initials, role, is_admin
         FROM users
+        WHERE COALESCE(is_dashboard_invisible, 0) = 0
         ORDER BY is_admin DESC, username ASC
         """
     )
@@ -2029,13 +2444,52 @@ def add_task_comment(task_id: int):
         flash("Kommentar darf nicht leer sein.", "error")
         return redirect(url_for("task_detail", task_id=task_id))
 
-    execute(
+    raw_mention_ids = request.form.get("mention_user_ids", "").strip()
+    mention_user_ids = []
+    if raw_mention_ids:
+        seen_ids = set()
+        for raw_id in raw_mention_ids.split(","):
+            cleaned = raw_id.strip()
+            if not cleaned:
+                continue
+            try:
+                mention_id = int(cleaned)
+            except ValueError:
+                flash("Ungültige Markierungsauswahl.", "error")
+                return redirect(url_for("task_detail", task_id=task_id))
+            if mention_id not in seen_ids:
+                seen_ids.add(mention_id)
+                mention_user_ids.append(mention_id)
+
+    if mention_user_ids:
+        placeholders = ",".join(["?"] * len(mention_user_ids))
+        found_rows = query_all(
+            f"SELECT id FROM users WHERE id IN ({placeholders})",
+            tuple(mention_user_ids),
+        )
+        if len(found_rows) != len(mention_user_ids):
+            flash("Mindestens eine Markierung ist ungültig.", "error")
+            return redirect(url_for("task_detail", task_id=task_id))
+
+    created_at = now_iso()
+    comment_insert = execute(
         """
         INSERT INTO task_comments (task_id, user_id, content, created_at, updated_at)
         VALUES (?, ?, ?, ?, NULL)
         """,
-        (task_id, user["id"], content, now_iso()),
+        (task_id, user["id"], content, created_at),
     )
+
+    comment_id = int(comment_insert.lastrowid)
+    for mention_user_id in mention_user_ids:
+        execute(
+            """
+            INSERT OR IGNORE INTO task_comment_mentions (comment_id, user_id, created_at)
+            VALUES (?, ?, ?)
+            """,
+            (comment_id, mention_user_id, created_at),
+        )
+
     flash("Kommentar wurde gespeichert.", "success")
     return redirect(url_for("task_detail", task_id=task_id))
 
@@ -2133,11 +2587,17 @@ def edit_task(task_id: int):
     description = request.form.get("description", "").strip()
     due_date = request.form.get("due_date", "").strip()
     due_time = request.form.get("due_time", "").strip()
+    ticket_category = normalize_ticket_category(request.form.get("ticket_category", ""))
+    room = request.form.get("room", "").strip()
     contact_person_user_id_raw = request.form.get("contact_person_user_id", "").strip()
     assignee_ids_raw = request.form.getlist("assignee_ids")
 
     if not title or not description or not due_date:
         flash("Titel, Beschreibung und Fälligkeitsdatum sind erforderlich.", "error")
+        return redirect(url_for("task_detail", task_id=task_id))
+
+    if not ticket_category:
+        flash("Bitte eine gültige Ticket-Kategorie auswählen.", "error")
         return redirect(url_for("task_detail", task_id=task_id))
 
     try:
@@ -2147,7 +2607,7 @@ def edit_task(task_id: int):
         return redirect(url_for("task_detail", task_id=task_id))
 
     contact_user = query_one(
-        "SELECT id, username FROM users WHERE id = ?",
+        "SELECT id, username FROM users WHERE id = ? AND COALESCE(is_dashboard_invisible, 0) = 0",
         (contact_person_user_id,),
     )
     if contact_user is None:
@@ -2172,7 +2632,10 @@ def edit_task(task_id: int):
     assignee_ids = sorted(set(assignee_ids))
     if assignee_ids:
         placeholders = ",".join(["?"] * len(assignee_ids))
-        found = query_all(f"SELECT id FROM users WHERE id IN ({placeholders})", tuple(assignee_ids))
+        found = query_all(
+            f"SELECT id FROM users WHERE id IN ({placeholders}) AND COALESCE(is_dashboard_invisible, 0) = 0",
+            tuple(assignee_ids),
+        )
         if len(found) != len(assignee_ids):
             flash("Mindestens ein ausgewählter Bearbeiter existiert nicht.", "error")
             return redirect(url_for("task_detail", task_id=task_id))
@@ -2180,7 +2643,7 @@ def edit_task(task_id: int):
     execute(
         """
         UPDATE tasks
-        SET title = ?, description = ?, due_date = ?, assignee_id = ?, contact_person = ?, contact_person_user_id = ?, updated_at = ?
+        SET title = ?, description = ?, due_date = ?, assignee_id = ?, contact_person = ?, contact_person_user_id = ?, ticket_category = ?, room = ?, updated_at = ?
         WHERE id = ?
         """,
         (
@@ -2190,6 +2653,8 @@ def edit_task(task_id: int):
             assignee_ids[0] if assignee_ids else None,
             contact_user["username"],
             contact_person_user_id,
+            ticket_category,
+            room,
             now_iso(),
             task_id,
         ),
@@ -2220,9 +2685,17 @@ def manage_users():
             initials = normalize_initials(request.form.get("initials", ""))
             role = normalize_role(request.form.get("role", ""))
             is_admin = 1 if role == "admin" else 0
+            member_type = request.form.get("member_type", MEMBER_TYPE_REGULAR)
+            if member_type not in VALID_MEMBER_TYPES:
+                member_type = MEMBER_TYPE_REGULAR
+            is_dashboard_invisible = 1 if request.form.get("is_dashboard_invisible") == "1" else 0
 
             if not username or not password:
                 flash("Benutzername und Passwort sind erforderlich.", "error")
+                return redirect(url_for("manage_users"))
+
+            if len(username) > MAX_USERNAME_LENGTH:
+                flash(f"Benutzername darf maximal {MAX_USERNAME_LENGTH} Zeichen lang sein.", "error")
                 return redirect(url_for("manage_users"))
 
             if password != password_confirm:
@@ -2249,8 +2722,8 @@ def manage_users():
 
             execute(
                 """
-                INSERT INTO users (username, password_hash, is_admin, initials, role, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO users (username, password_hash, is_admin, initials, role, member_type, is_dashboard_invisible, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     username,
@@ -2258,6 +2731,8 @@ def manage_users():
                     is_admin,
                     initials,
                     role,
+                    member_type,
+                    is_dashboard_invisible,
                     now_iso(),
                 ),
             )
@@ -2343,6 +2818,10 @@ def manage_users():
                 flash("Benutzername ist erforderlich.", "error")
                 return redirect(url_for("manage_users"))
 
+            if len(username) > MAX_USERNAME_LENGTH:
+                flash(f"Benutzername darf maximal {MAX_USERNAME_LENGTH} Zeichen lang sein.", "error")
+                return redirect(url_for("manage_users"))
+
             if not initials:
                 flash("Kürzel muss genau 3 Zeichen (A-Z/0-9) lang sein.", "error")
                 return redirect(url_for("manage_users"))
@@ -2376,6 +2855,11 @@ def manage_users():
                 return redirect(url_for("manage_users"))
 
             is_admin = 1 if role == "admin" else 0
+            is_inactive = 1 if request.form.get("is_inactive") == "1" else 0
+            member_type = request.form.get("member_type", MEMBER_TYPE_REGULAR)
+            if member_type not in VALID_MEMBER_TYPES:
+                member_type = MEMBER_TYPE_REGULAR
+            is_dashboard_invisible = 1 if request.form.get("is_dashboard_invisible") == "1" else 0
             if target["is_admin"] and not is_admin:
                 row = query_one("SELECT COUNT(*) AS cnt FROM users WHERE is_admin = 1")
                 if int(row["cnt"]) <= 1:
@@ -2386,7 +2870,7 @@ def manage_users():
                 execute(
                     """
                     UPDATE users
-                    SET username = ?, initials = ?, role = ?, is_admin = ?, password_hash = ?
+                    SET username = ?, initials = ?, role = ?, is_admin = ?, is_inactive = ?, member_type = ?, is_dashboard_invisible = ?, password_hash = ?
                     WHERE id = ?
                     """,
                     (
@@ -2394,6 +2878,9 @@ def manage_users():
                         initials,
                         role,
                         is_admin,
+                        is_inactive,
+                        member_type,
+                        is_dashboard_invisible,
                         generate_password_hash(new_password),
                         target_id,
                     ),
@@ -2406,16 +2893,30 @@ def manage_users():
                 execute(
                     """
                     UPDATE users
-                    SET username = ?, initials = ?, role = ?, is_admin = ?
+                    SET username = ?, initials = ?, role = ?, is_admin = ?, is_inactive = ?, member_type = ?, is_dashboard_invisible = ?
                     WHERE id = ?
                     """,
-                    (username, initials, role, is_admin, target_id),
+                    (username, initials, role, is_admin, is_inactive, member_type, is_dashboard_invisible, target_id),
                 )
                 if target["id"] == current["id"]:
                     flash("Eigener Account wurde aktualisiert.", "success")
                 else:
                     flash("Benutzerprofil wurde aktualisiert.", "success")
 
+            return redirect(url_for("manage_users"))
+
+        if action == "toggle-inactive":
+            target_id = request.form.get("user_id", "").strip()
+            target = query_one("SELECT id, is_inactive FROM users WHERE id = ?", (target_id,))
+            if target is None:
+                flash("Benutzer nicht gefunden.", "error")
+                return redirect(url_for("manage_users"))
+            new_val = 0 if target["is_inactive"] else 1
+            execute("UPDATE users SET is_inactive = ? WHERE id = ?", (new_val, target_id))
+            if new_val:
+                flash("Benutzer wurde als inaktiv markiert.", "success")
+            else:
+                flash("Benutzer wurde wieder als aktiv markiert.", "success")
             return redirect(url_for("manage_users"))
 
         if action == "delete":
@@ -2472,19 +2973,24 @@ def manage_users():
             is_admin,
             initials,
             role,
+            is_inactive,
+            is_dashboard_invisible,
+            member_type,
             created_at
         FROM users
-                ORDER BY is_admin DESC,
-                    CASE role
-                        WHEN ? THEN 0
-                        WHEN ? THEN 1
-                        WHEN ? THEN 2
-                        ELSE 3
-                    END,
-                    username ASC
-        """
-                ,
-                (ROLE_TEAM, ROLE_SYSTEM_INTEGRATOR, ROLE_APPLICATION_DEVELOPER),
+        ORDER BY
+            is_inactive ASC,
+            CASE member_type WHEN 'trainee' THEN 0 ELSE 1 END ASC,
+            is_admin DESC,
+            CASE role
+                WHEN ? THEN 0
+                WHEN ? THEN 1
+                WHEN ? THEN 2
+                ELSE 3
+            END,
+            username ASC
+        """,
+        (ROLE_TEAM, ROLE_SYSTEM_INTEGRATOR, ROLE_APPLICATION_DEVELOPER),
     )
 
     enriched_users = []
@@ -2492,6 +2998,8 @@ def manage_users():
         item = dict(row)
         item["role_label"] = role_label(row["role"], row["is_admin"])
         item["color_class"] = badge_color_class(row["role"], row["is_admin"])
+        item["member_type"] = row["member_type"] or MEMBER_TYPE_REGULAR
+        item["is_dashboard_invisible"] = bool(row["is_dashboard_invisible"])
         enriched_users.append(item)
 
     return render_template(

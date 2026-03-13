@@ -14,6 +14,14 @@
 
   <div class="task-view-meta-grid">
     <div class="task-view-meta-item">
+      <small class="task-view-label">Kategorie</small>
+      <strong>{{ ticket_category_label(task['ticket_category']) }}</strong>
+    </div>
+    <div class="task-view-meta-item">
+      <small class="task-view-label">Raum</small>
+      <strong>{{ task['room'] or '-' }}</strong>
+    </div>
+    <div class="task-view-meta-item">
       <small class="task-view-label">Ansprechpartner</small>
       <strong>{{ task['contact_person_display'] }}</strong>
     </div>
@@ -81,6 +89,18 @@
         {% endfor %}
       </select>
     </label>
+    <label class="field-compact">Kategorie
+      <select name="ticket_category" required>
+        {% for option in ticket_category_options %}
+        <option value="{{ option['value'] }}" {{ 'selected' if task['ticket_category'] == option['value'] else '' }}>
+          {{ option['label'] }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field-compact">Raum (optional)
+      <input type="text" name="room" value="{{ task['room'] or '' }}" maxlength="120" placeholder="z.B. BE.45">
+    </label>
     <small class="muted full">Mehrfachauswahl: Strg/Cmd gedrückt halten.</small>
     <label class="full">Beschreibung
       <textarea name="description" rows="4" required>{{ task['description'] }}</textarea>
@@ -104,10 +124,29 @@
   {% if can_comment %}
   <form method="post" action="{{ url_for('add_task_comment', task_id=task['id']) }}" class="form-grid">
     <label>Kommentar
-      <textarea name="content" rows="3" required></textarea>
+      <textarea id="comment-content" name="content" rows="3" required></textarea>
     </label>
+    <input type="hidden" id="mention-user-ids" name="mention_user_ids" value="">
     <div class="actions-row">
       <button type="submit">Kommentar senden</button>
+      <button type="button" class="secondary" id="mention-user-btn">Markieren</button>
+    </div>
+    <div id="mention-selected-wrap" class="full" hidden>
+      <small class="task-view-label">Markierte Personen:</small>
+      <div id="mention-selected-chips" class="assignee-badges"></div>
+    </div>
+    <div id="mention-picker" class="full" hidden>
+      <label>Benutzer markieren
+        <select id="mention-user-select" aria-label="Benutzer zum Markieren auswählen" multiple size="5">
+          {% for person in users %}
+          <option value="{{ person['id'] }}" data-username="{{ person['username'] }}" data-initials="{{ person['initials'] }}">{{ person['initials'] }} - {{ person['username'] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="actions-row">
+        <button type="button" class="secondary" id="mention-insert-btn">Auswahl übernehmen</button>
+        <button type="button" class="secondary" id="mention-cancel-btn">Abbrechen</button>
+      </div>
     </div>
   </form>
   {% else %}
@@ -133,6 +172,16 @@
           </div>
         </div>
         <p>{{ comment['content'] }}</p>
+        {% if comment['mentions'] %}
+        <div class="task-view-assignees">
+          <small class="task-view-label">Markierte Personen:</small>
+          <div class="assignee-badges">
+            {% for mentioned in comment['mentions'] %}
+            <span class="initial-badge mention-badge {{ mentioned['color_class'] }}" title="{{ mentioned['username'] }} ({{ mentioned['role_label'] }})">{{ mentioned['initials'] }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
         {% if task['status'] != 'closed' and (user['is_admin'] or comment['user_id'] == user['id']) %}
         <div class="compact-actions">
           <button
@@ -167,4 +216,88 @@
     {% endif %}
   </div>
 </section>
+<script>
+  (() => {
+    const commentInput = document.getElementById("comment-content");
+    const mentionUserIdsInput = document.getElementById("mention-user-ids");
+    const mentionSelectedWrap = document.getElementById("mention-selected-wrap");
+    const mentionSelectedChips = document.getElementById("mention-selected-chips");
+    const mentionPicker = document.getElementById("mention-picker");
+    const mentionSelect = document.getElementById("mention-user-select");
+    const mentionButton = document.getElementById("mention-user-btn");
+    const mentionInsertButton = document.getElementById("mention-insert-btn");
+    const mentionCancelButton = document.getElementById("mention-cancel-btn");
+
+    if (!commentInput || !mentionUserIdsInput || !mentionSelectedWrap || !mentionSelectedChips || !mentionPicker || !mentionSelect || !mentionButton || !mentionInsertButton || !mentionCancelButton) {
+      return;
+    }
+
+    const selectedMentions = new Map();
+
+    const syncMentionUserIds = () => {
+      mentionUserIdsInput.value = Array.from(selectedMentions.keys()).join(",");
+    };
+
+    const renderMentionChips = () => {
+      mentionSelectedChips.innerHTML = "";
+      if (!selectedMentions.size) {
+        mentionSelectedWrap.hidden = true;
+        syncMentionUserIds();
+        return;
+      }
+
+      mentionSelectedWrap.hidden = false;
+      selectedMentions.forEach((value, userId) => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "secondary small-btn mention-chip";
+        chip.textContent = `${value.initials} - ${value.username} ×`;
+        chip.title = "Markierung entfernen";
+        chip.addEventListener("click", () => {
+          selectedMentions.delete(userId);
+          renderMentionChips();
+        });
+        mentionSelectedChips.appendChild(chip);
+      });
+      syncMentionUserIds();
+    };
+
+    mentionButton.addEventListener("click", () => {
+      mentionPicker.hidden = !mentionPicker.hidden;
+      if (!mentionPicker.hidden) {
+        mentionSelect.focus();
+      }
+    });
+
+    mentionCancelButton.addEventListener("click", () => {
+      mentionPicker.hidden = true;
+    });
+
+    mentionInsertButton.addEventListener("click", () => {
+      const picked = Array.from(mentionSelect.selectedOptions)
+        .map((option) => {
+          const userId = (option.value || "").trim();
+          const username = (option.dataset.username || "").trim();
+          const initials = (option.dataset.initials || "").trim() || "USR";
+          return { userId, username, initials };
+        })
+        .filter((entry) => entry.userId && entry.username);
+      if (!picked.length) {
+        return;
+      }
+
+      picked.forEach((entry) => {
+        selectedMentions.set(entry.userId, {
+          username: entry.username,
+          initials: entry.initials,
+        });
+      });
+      renderMentionChips();
+      mentionPicker.hidden = true;
+      commentInput.focus();
+    });
+
+    renderMentionChips();
+  })();
+</script>
 {% endblock %}

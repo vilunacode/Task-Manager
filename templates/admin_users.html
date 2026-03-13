@@ -6,7 +6,7 @@
   <form method="post" class="form-grid two-columns">
     <input type="hidden" name="action" value="create">
     <label>Benutzername
-      <input type="text" name="username" required>
+      <input type="text" name="username" maxlength="13" required>
     </label>
     <label>Kürzel (3 Zeichen)
       <input type="text" name="initials" minlength="3" maxlength="3" required>
@@ -24,6 +24,17 @@
         {% endfor %}
       </select>
     </label>
+    <div class="full radio-group-label">
+      <span class="field-label">Art des Mitarbeiters</span>
+      <div class="radio-group">
+        <label class="checkbox-label"><input type="radio" name="member_type" value="regular" checked> Mitarbeiter</label>
+        <label class="checkbox-label"><input type="radio" name="member_type" value="trainee"> Trainingsmitarbeiter</label>
+      </div>
+    </div>
+    <label class="checkbox-label full">
+      <input type="checkbox" name="is_dashboard_invisible" value="1">
+      Im Dashboard ausblenden
+    </label>
     <div class="actions-row">
       <button type="submit">Benutzer hinzufügen</button>
     </div>
@@ -38,19 +49,46 @@
         <tr>
           <th>Name</th>
           <th>Kürzel</th>
+          <th>Typ</th>
           <th>Rolle</th>
+          <th>Status</th>
           <th>Bearbeiten</th>
           <th>Löschen</th>
         </tr>
       </thead>
       <tbody>
+        {% set ns = namespace(last_group='') %}
         {% for account in users %}
-        <tr>
+        {% set current_group = 'inactive' if account['is_inactive'] else account['member_type'] %}
+        {% if ns.last_group != '' and ns.last_group != current_group %}
+        <tr class="user-inactive-separator">
+          <td colspan="7"><span>
+            {%- if current_group == 'inactive' -%}Inaktive Mitglieder
+            {%- elif current_group == 'regular' -%}Mitarbeiter
+            {%- else -%}Trainingsmitarbeiter
+            {%- endif -%}
+          </span></td>
+        </tr>
+        {% endif %}
+        {% set ns.last_group = current_group %}
+        <tr class="{{ 'user-row-inactive' if account['is_inactive'] else '' }}">
           <td>{{ account['username'] }}</td>
           <td>
-            <span class="initial-badge {{ account['color_class'] }}">{{ account['initials'] }}</span>
+            <span class="initial-badge {{ account['color_class'] }}{{ ' badge-inactive' if account['is_inactive'] else '' }}">{{ account['initials'] }}</span>
           </td>
+          <td><small class="muted">{{ 'Trainingsmitarbeiter' if account['member_type'] == 'trainee' else 'Mitarbeiter' }}</small></td>
           <td>{{ account['role_label'] }}</td>
+          <td>
+            <form method="post" class="inline-form">
+              <input type="hidden" name="action" value="toggle-inactive">
+              <input type="hidden" name="user_id" value="{{ account['id'] }}">
+              {% if account['is_inactive'] %}
+              <button type="submit" class="secondary small-btn">Aktivieren</button>
+              {% else %}
+              <button type="submit" class="secondary small-btn">Inaktiv setzen</button>
+              {% endif %}
+            </form>
+          </td>
           <td>
             <button
               type="button"
@@ -66,7 +104,7 @@
                 <input type="hidden" name="action" value="update">
                 <input type="hidden" name="user_id" value="{{ account['id'] }}">
                 <label>Benutzername
-                  <input type="text" name="username" value="{{ account['username'] }}" required>
+                  <input type="text" name="username" value="{{ account['username'] }}" maxlength="13" required>
                 </label>
                 <label>Kürzel
                   <input type="text" name="initials" minlength="3" maxlength="3" value="{{ account['initials'] }}" required>
@@ -83,6 +121,21 @@
                     <option value="{{ role_opt['value'] }}" {{ 'selected' if ((role_opt['value'] == 'admin' and account['is_admin']) or (not account['is_admin'] and role_opt['value'] == account['role'])) else '' }}>{{ role_opt['label'] }}</option>
                     {% endfor %}
                   </select>
+                </label>
+                <div class="full radio-group-label">
+                  <span class="field-label">Art des Mitarbeiters</span>
+                  <div class="radio-group">
+                    <label class="checkbox-label"><input type="radio" name="member_type" value="regular" {{ 'checked' if account['member_type'] != 'trainee' else '' }}> Mitarbeiter</label>
+                    <label class="checkbox-label"><input type="radio" name="member_type" value="trainee" {{ 'checked' if account['member_type'] == 'trainee' else '' }}> Trainingsmitarbeiter</label>
+                  </div>
+                </div>
+                <label class="checkbox-label">
+                  <input type="checkbox" name="is_inactive" value="1" {{ 'checked' if account['is_inactive'] else '' }}>
+                  Inaktiv <small class="muted">(z. B. Urlaub / längere Abwesenheit)</small>
+                </label>
+                <label class="checkbox-label full">
+                  <input type="checkbox" name="is_dashboard_invisible" value="1" {{ 'checked' if account['is_dashboard_invisible'] else '' }}>
+                  Im Dashboard ausblenden
                 </label>
                 <div class="actions-row">
                   <button type="submit">Speichern</button>

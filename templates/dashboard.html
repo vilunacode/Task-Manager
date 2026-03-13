@@ -9,9 +9,23 @@
   </div>
 
   <div class="toolbar-row">
-    <div class="filter-tabs">
-      <a href="{{ url_for('dashboard', filter='all') }}" class="chip {{ 'active' if filter_mode == 'all' else '' }}">Alle Tasks</a>
-      <a href="{{ url_for('dashboard', filter='mine') }}" class="chip {{ 'active' if filter_mode == 'mine' else '' }}">Meine Tasks</a>
+    <div class="filter-stack">
+      <div class="filter-tabs">
+        <a href="{{ url_for('dashboard', filter='all') }}" class="chip {{ 'active' if filter_mode == 'all' else '' }}">Alle Tasks</a>
+        <a href="{{ url_for('dashboard', filter='mine') }}" class="chip {{ 'active' if filter_mode == 'mine' else '' }}">Meine Tasks</a>
+        <a href="{{ url_for('dashboard', filter='pings', ping_tab=ping_tab) }}" class="chip {{ 'active' if filter_mode == 'pings' else '' }} ping-chip">
+          Pings
+          {% if ping_unread_count and ping_unread_count > 0 %}
+          <span class="ping-notification">{{ ping_unread_count }}</span>
+          {% endif %}
+        </a>
+      </div>
+      {% if filter_mode == 'pings' %}
+      <div class="filter-tabs ping-subtabs">
+        <a href="{{ url_for('dashboard', filter='pings', ping_tab='unread') }}" class="chip {{ 'active' if ping_tab == 'unread' else '' }}">ungelesene Pings</a>
+        <a href="{{ url_for('dashboard', filter='pings', ping_tab='read') }}" class="chip {{ 'active' if ping_tab == 'read' else '' }}">gelesene Pings</a>
+      </div>
+      {% endif %}
     </div>
     <button type="button" id="open-create-task">Task erstellen</button>
   </div>
@@ -29,6 +43,7 @@
         {% set can_write_task = user['is_admin'] or task['created_by'] == user['id'] or task['id'] in editable_task_ids %}
         {% set can_assign_members = user['is_admin'] or task['created_by'] == user['id'] %}
         {% set task_read_only = task['status'] == 'closed' or not can_write_task %}
+        {% set open_url = url_for('task_detail', task_id=task['id']) %}
         <div
           class="task-card {{ 'task-assigned-to-me' if assigned_to_me else '' }} {{ 'task-due-today' if due_today else '' }} {{ 'draggable-task' if (user['is_admin'] or task['id'] in editable_task_ids) else '' }} {{ 'assignee-drop-enabled' if (task['status'] != 'closed' and can_assign_members) else '' }}"
           data-task-id="{{ task['id'] }}"
@@ -39,6 +54,7 @@
           draggable="{{ 'true' if (user['is_admin'] or task['id'] in editable_task_ids) else 'false' }}"
         >
           <strong>{{ task['title'] }}</strong>
+          <span class="task-priority-chip priority-{{ task['priority'] or 3 }}">Prio {{ task['priority'] or 3 }}</span>
           {% if due_today %}
           <span class="due-today-chip">Heute fällig</span>
           {% endif %}
@@ -48,6 +64,14 @@
               <span class="task-meta-value">{{ format_datetime(task['due_date']) }}</span>
             </div>
             {% if user['card_view_mode'] == 'extended' %}
+            <div class="task-meta-row">
+              <span class="task-meta-key">Kategorie</span>
+              <span class="task-meta-value">{{ ticket_category_label(task['ticket_category']) }}</span>
+            </div>
+            <div class="task-meta-row">
+              <span class="task-meta-key">Raum</span>
+              <span class="task-meta-value">{{ task['room'] or '-' }}</span>
+            </div>
             <div class="task-meta-row">
               <span class="task-meta-key">Erstellt am</span>
               <span class="task-meta-value">{{ format_system_datetime(task['created_at']) }}</span>
@@ -60,7 +84,7 @@
           </div>
           <a
             class="task-open-btn {{ 'readonly' if task_read_only else '' }}"
-            href="{{ url_for('task_detail', task_id=task['id']) }}"
+            href="{{ open_url }}"
             title="{{ 'Task ansehen' if task_read_only else 'Task bearbeiten' }}"
             aria-label="{{ 'Task ansehen' if task_read_only else 'Task bearbeiten' }}"
           >
@@ -76,6 +100,17 @@
             </svg>
             {% endif %}
           </a>
+          {% if filter_mode == 'pings' and ping_tab == 'read' %}
+          <form method="post" action="{{ url_for('mark_task_ping_unread', task_id=task['id']) }}" class="ping-read-action-form">
+            <input type="hidden" name="ping_tab" value="read">
+            <button type="submit" class="secondary small-btn">Auf ungelesen setzen</button>
+          </form>
+          {% elif filter_mode == 'pings' and ping_tab == 'unread' %}
+          <form method="post" action="{{ url_for('mark_task_ping_read', task_id=task['id']) }}" class="ping-read-action-form">
+            <input type="hidden" name="ping_tab" value="unread">
+            <button type="submit" class="secondary small-btn">Auf gelesen setzen</button>
+          </form>
+          {% endif %}
           <div class="task-footer">
             <small>Bearbeiter:</small>
             <div class="assignee-badges">
@@ -117,6 +152,26 @@
     <small class="muted full">Mehrfachauswahl: Strg/Cmd gedrückt halten.</small>
     <label class="full">Beschreibung
       <textarea name="description" rows="4" required></textarea>
+    </label>
+    <label class="field-compact">Kategorie
+      <select name="ticket_category" required>
+        <option value="" selected disabled>Bitte wählen</option>
+        {% for option in ticket_category_options %}
+        <option value="{{ option['value'] }}">{{ option['label'] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field-compact">Priorität
+      <select name="priority" required>
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3" selected>3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+    </label>
+    <label class="field-compact">Raum (optional)
+      <input type="text" name="room" maxlength="120" placeholder="z.B. BE.45">
     </label>
     <label>Fällig am
       <input type="date" name="due_date" required>
@@ -169,6 +224,8 @@
 
     const REFRESH_INTERVAL_MS = Number("{{ (app_settings['overview_refresh_interval_seconds']|int if app_settings else 1) * 1000 }}") || 1000;
     const USE_EXTENDED_META = "{{ '1' if user['card_view_mode'] == 'extended' else '0' }}" === "1";
+    const IS_PING_READ_TAB = "{{ '1' if (filter_mode == 'pings' and ping_tab == 'read') else '0' }}" === "1";
+    const IS_PING_UNREAD_TAB = "{{ '1' if (filter_mode == 'pings' and ping_tab == 'unread') else '0' }}" === "1";
 
     const cardById = new Map();
     let draggedTask = null;
@@ -250,16 +307,31 @@
 
     const renderCardInner = (card, task) => {
       const dueChip = task.due_today ? '<span class="due-today-chip">Heute fällig</span>' : "";
+      const priorityValueRaw = Number(task.priority || 3);
+      const priorityValue = Number.isFinite(priorityValueRaw) ? Math.max(1, Math.min(5, priorityValueRaw)) : 3;
+      const priorityChip = `<span class="task-priority-chip priority-${priorityValue}">Prio ${priorityValue}</span>`;
       const openTitle = task.task_read_only ? "Task ansehen" : "Task bearbeiten";
       const readonlyClass = task.task_read_only ? "readonly" : "";
+      const openHref = `/tasks/${task.id}`;
+      const pingSetReadHtml = IS_PING_UNREAD_TAB
+        ? `<form method="post" action="/tasks/${task.id}/pings/mark-read" class="ping-read-action-form"><input type="hidden" name="ping_tab" value="unread"><button type="submit" class="secondary small-btn">Auf gelesen setzen</button></form>`
+        : "";
+      const pingResetHtml = IS_PING_READ_TAB
+        ? `<form method="post" action="/tasks/${task.id}/pings/mark-unread" class="ping-read-action-form"><input type="hidden" name="ping_tab" value="read"><button type="submit" class="secondary small-btn">Auf ungelesen setzen</button></form>`
+        : "";
       const createdAtText = task.created_at_display || card.dataset.createdAtDisplay || formatSystemDateTime(task.created_at);
+      const categoryText = task.ticket_category_label || "Sonstiges";
+      const roomText = (task.room || "").trim() || "-";
       const extraMeta = USE_EXTENDED_META
-        ? `<div class="task-meta-row"><span class="task-meta-key">Erstellt am</span><span class="task-meta-value">${escapeHtml(createdAtText || "-")}</span></div>
+        ? `<div class="task-meta-row"><span class="task-meta-key">Kategorie</span><span class="task-meta-value">${escapeHtml(categoryText)}</span></div>
+           <div class="task-meta-row"><span class="task-meta-key">Raum</span><span class="task-meta-value">${escapeHtml(roomText)}</span></div>
+           <div class="task-meta-row"><span class="task-meta-key">Erstellt am</span><span class="task-meta-value">${escapeHtml(createdAtText || "-")}</span></div>
            <div class="task-meta-row"><span class="task-meta-key">Erstellt von</span><span class="task-meta-value">${escapeHtml(task.creator_name || "-")}</span></div>`
         : "";
 
       card.innerHTML = `
         <strong>${escapeHtml(task.title || "(Ohne Titel)")}</strong>
+        ${priorityChip}
         ${dueChip}
         <div class="task-card-meta">
           <div class="task-meta-row task-meta-row-due">
@@ -268,9 +340,11 @@
           </div>
           ${extraMeta}
         </div>
-        <a class="task-open-btn ${readonlyClass}" href="/tasks/${task.id}" title="${openTitle}" aria-label="${openTitle}">
+        <a class="task-open-btn ${readonlyClass}" href="${openHref}" title="${openTitle}" aria-label="${openTitle}">
           ${task.task_read_only ? openReadonlySvg : openEditSvg}
         </a>
+        ${pingSetReadHtml}
+        ${pingResetHtml}
         <div class="task-footer">
           <small>Bearbeiter:</small>
           <div class="assignee-badges">${renderAssigneesHtml(task.assignees)}</div>
@@ -497,7 +571,7 @@
 
     const pollAndSyncDashboard = async () => {
       try {
-        const response = await fetch(`{{ url_for('dashboard_tasks_api') }}?filter={{ filter_mode }}`, {
+        const response = await fetch(`{{ url_for('dashboard_tasks_api') }}?filter={{ filter_mode }}&ping_tab={{ ping_tab }}`, {
           headers: { "Accept": "application/json" },
           cache: "no-store",
         });

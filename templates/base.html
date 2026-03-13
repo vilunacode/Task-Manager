@@ -77,16 +77,22 @@
       <aside class="user-sidebar card">
         <h3>Das Team</h3>
         <div class="user-badge-list">
+          {% set ns = namespace(last_group='') %}
           {% for member in sidebar_users %}
+          {% set current_group = 'inactive' if member['is_inactive'] else member['member_type'] %}
+          {% if ns.last_group != '' and ns.last_group != current_group %}
+          <div class="sidebar-inactive-separator"></div>
+          {% endif %}
+          {% set ns.last_group = current_group %}
           <div
-            class="user-badge-item sidebar-draggable-member"
-            title="{{ member['username'] }} ({{ member['role_label'] }})"
+            class="user-badge-item sidebar-draggable-member{{ ' sidebar-member-inactive' if member['is_inactive'] else '' }}"
+            title="{{ member['username'] }} ({{ member['role_label'] }}){{ ' — inaktiv' if member['is_inactive'] else '' }}"
             data-user-id="{{ member['id'] }}"
             data-username="{{ member['username'] }}"
             draggable="true"
           >
             <span class="user-task-score" title="Zugewiesene Tasks">{{ member['assigned_task_count'] }}</span>
-            <span class="initial-badge {{ member['color_class'] }}">{{ member['initials'] }}</span>
+            <span class="initial-badge {{ member['color_class'] }}{{ ' badge-inactive' if member['is_inactive'] else '' }}">{{ member['initials'] }}</span>
             <span class="muted">{{ member['username'] }}</span>
           </div>
           {% endfor %}

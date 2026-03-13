@@ -2,6 +2,26 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Run Flask App",
+            "type": "shell",
+            "command": "bash",
+            "args": [
+                "-lc",
+                "if [ ! -d .venv ]; then python3 -m venv .venv; fi; ./.venv/bin/pip install -r requirements.txt && ./.venv/bin/python app.py"
+            ],
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "Publish to GitHub",
             "type": "shell",
             "command": "bash",
