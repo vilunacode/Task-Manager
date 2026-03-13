@@ -1,47 +1,87 @@
 # Task Manager
 
-<p align="center">
-  <strong>Browserbasierter Task-Manager mit Rollen, Kalender, Admin-Workflows und modernem Dashboard.</strong>
-</p>
+Browserbasierter Task-Manager auf Flask-Basis mit Rollen, Dashboard-Board, Ping-Benachrichtigungen, Kalender und Admin-Verwaltung.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Version-1.0.0-blue" alt="Version">
-  <img src="https://img.shields.io/badge/Python-3.12-3776AB" alt="Python">
-  <img src="https://img.shields.io/badge/Flask-3.x-000000" alt="Flask">
-  <img src="https://img.shields.io/badge/SQLite-3-003B57" alt="SQLite">
-  <img src="https://img.shields.io/badge/HTML%2FCSS%2FJS-Frontend-F16529" alt="HTML/CSS/JS">
-</p>
+## Überblick
 
-## Ueberblick
+Die Anwendung richtet sich an Teams, die Aufgaben in einem visuellen Board verwalten möchten. 
+Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workflow über Erwähnungen, Kalenderfunktionen sowie umfangreiche Einstellungen für Admins.
 
-Task Manager ist eine Flask-Anwendung fuer Team-Taskverwaltung mit klaren Rollen, visuellem Workflow und Admin-Steuerung. 
-Der Fokus liegt auf schneller Uebersicht, sauberen Berechtigungen und einem pragmatischen Alltagseinsatz.
+## Funktionsumfang
 
-## Features
+### Auth & Grundfunktionen
 
-- Login/Logout mit Session-Auth und Passwort-Hashing.
-- Erstsetup via `/setup` fuer den initialen Admin.
-- Rollenmodell mit Admin, Standardrollen und benutzerdefinierten Rollen.
-- Benutzerverwaltung (anlegen, bearbeiten, loeschen) inkl. Schutzlogik.
-- Aufgabenboard mit Status:
-- `Offen`
-- `In Bearbeitung`
-- `Geschlossen`
-- Drag-and-Drop fuer Statuswechsel im Dashboard.
-- Bearbeiter-Management inkl. Drag-and-Drop aus `Das Team` auf Task-Karten.
-- Tasks koennen ohne Bearbeiter gespeichert werden.
-- Kommentare pro Task mit Bearbeiten/Loeschen-Regeln.
-- Geschlossene Tasks mit Admin-Review (zuruecksenden/loeschen).
-- Kalenderansicht (Monatsgrid) mit persoenlichen Terminen und Task-Terminen.
-- Dark-/Standard-Modus pro Benutzer in den Einstellungen.
-- Umfangreiche Admin-Designeinstellungen (Farben, Groessen, Refresh, Ton).
+- Login/Logout mit Session-Auth
+- Passwort-Hashing mit `werkzeug.security`
+- Initiales Setup über `/setup` für den ersten Admin
 
-## Tech Stack
+### Tasks & Dashboard
 
-- Backend: `Python`, `Flask`
-- Datenbank: `SQLite` (`task_manager.db`)
-- Frontend: `Jinja2`, `HTML`, `CSS`, `JavaScript`
-- Auth: `werkzeug.security` (Password Hashing)
+- Status-Board mit:
+  - `Offen`
+  - `In Bearbeitung`
+  - `Geschlossen`
+- Drag-and-Drop für Statuswechsel
+- Bearbeiter per Drag-and-Drop aus der Team-Sidebar auf Tasks zuweisen
+- Task-Erstellung mit:
+  - Titel, Beschreibung
+  - Kategorie
+  - Priorität `1-5`
+  - Raum
+  - Ansprechpartner
+  - Fälligkeitsdatum/-zeit
+- Prioritäts-Badge auf Task-Karten (1 bis 5, farblich abgestuft)
+- Bestehende Tasks können in der Detailansicht inkl. Priorität bearbeitet werden
+
+### Pings & Kommentare
+
+- Kommentare pro Task
+- Nutzer-Markierungen (Mentions) in Kommentaren
+- Ping-Filter im Dashboard mit Tabs:
+  - `ungelesene Pings`
+  - `gelesene Pings`
+- Pro Task zwischen gelesen/ungelesen umschalten
+- Ungelesene Pings als Counter am Ping-Filter
+
+### Benutzer, Rollen & Teamdarstellung
+
+- Rollenmodell:
+  - Admin
+  - Built-in Rollen
+  - Benutzerdefinierte Rollen
+- Benutzerverwaltung (anlegen, bearbeiten, löschen) mit Schutzlogik (z. B. letzter Admin)
+- Zusätzliche Nutzerattribute:
+  - Aktiv/Inaktiv
+  - Mitarbeitertyp: `Mitarbeiter` oder `Trainingsmitarbeiter`
+  - `Im Dashboard ausblenden` (Invisible)
+- Teamliste im Dashboard gruppiert und visuell getrennt:
+  - Trainingsmitarbeiter
+  - Mitarbeiter
+  - Inaktive
+- Inaktive Nutzer werden visuell gedimmt dargestellt
+- Dashboard-invisible Nutzer erscheinen nicht in:
+  - Team-Sidebar
+  - Bearbeiter-/Ansprechpartner-Auswahllisten im Dashboard
+  - Zuweisungsworkflows
+
+### Kalender & Einstellungen
+
+- Monatskalender mit persönlichen Terminen und Task-Terminen
+- Persönliche Ansichten und Team-Filter
+- User-Einstellungen:
+  - Light/Dark Theme
+  - Kartenansicht (kompakt/erweitert)
+- Admin-Einstellungen für UI/Tuning:
+  - Farben (Rollen)
+  - Größen/Layoutwerte
+  - Refresh-Intervalle
+  - Benachrichtigungston
+
+## Technischer Stack
+
+- Backend: Python 3.12, Flask
+- Datenbank: SQLite (`task_manager.db`)
+- Frontend: Jinja2, HTML, CSS, JavaScript
 
 ## Projektstruktur
 
@@ -49,7 +89,9 @@ Der Fokus liegt auf schneller Uebersicht, sauberen Berechtigungen und einem prag
 Task-Manager/
 |- app.py
 |- requirements.txt
-|- task_manager.db
+|- publish.sh
+|- publish.ps1
+|- publish.bat
 |- templates/
 |- static/
 `- README.md
@@ -64,7 +106,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-2. Abhaengigkeiten installieren
+2. Abhängigkeiten installieren
 
 ```bash
 pip install -r requirements.txt
@@ -76,28 +118,22 @@ pip install -r requirements.txt
 python app.py
 ```
 
-4. Im Browser oeffnen
+4. Browser öffnen
 
 ```text
 http://localhost:5000
 ```
 
-Beim ersten Start wirst du automatisch auf `/setup` geleitet.
+Beim ersten Start erfolgt eine Weiterleitung auf `/setup`.
 
-## Rollen und Berechtigungen
+## Wichtige Hinweise
 
-- `Admin`
-- Vollzugriff auf Benutzerverwaltung, Einstellungen und geschlossene Tasks.
-- Darf geschlossene Tasks zuruecksetzen und final loeschen.
-- `Nicht-Admin`
-- Je nach Task-Zuweisung/Erstellerstatus eingeschraenkte Bearbeitungsrechte.
-- Kann nur erlaubte Aktionen in Task-Detail und Dashboard ausfuehren.
-
-## Hinweise
-
-- Die App nutzt SQLite lokal und fuehrt notwendige Schema-Erweiterungen beim Start aus.
-- Fuer Produktion sollten `SECRET_KEY`, HTTPS und ein produktionsfaehiger WSGI-Server gesetzt werden.
+- Das DB-Schema wird beim Start automatisch migriert/ergänzt.
+- Für den Produktionseinsatz sollten mindestens gesetzt sein:
+  - `SECRET_KEY`
+  - HTTPS / Reverse Proxy
+  - produktionsfähiger WSGI-Server
 
 ## Lizenz
 
-Interne Nutzung / projektabhaengig. Bei Bedarf hier eine konkrete Lizenz ergaenzen (z. B. MIT).
+Interne Nutzung / projektabhängig. Bei Bedarf konkrete Lizenz ergänzen (z. B. MIT).
