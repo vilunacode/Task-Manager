@@ -2587,6 +2587,7 @@ def edit_task(task_id: int):
     description = request.form.get("description", "").strip()
     due_date = request.form.get("due_date", "").strip()
     due_time = request.form.get("due_time", "").strip()
+    priority_raw = request.form.get("priority", str(DEFAULT_TASK_PRIORITY)).strip()
     ticket_category = normalize_ticket_category(request.form.get("ticket_category", ""))
     room = request.form.get("room", "").strip()
     contact_person_user_id_raw = request.form.get("contact_person_user_id", "").strip()
@@ -2598,6 +2599,16 @@ def edit_task(task_id: int):
 
     if not ticket_category:
         flash("Bitte eine gültige Ticket-Kategorie auswählen.", "error")
+        return redirect(url_for("task_detail", task_id=task_id))
+
+    try:
+        priority = int(priority_raw)
+    except ValueError:
+        flash("Bitte eine gültige Priorität (1-5) auswählen.", "error")
+        return redirect(url_for("task_detail", task_id=task_id))
+
+    if priority < MIN_TASK_PRIORITY or priority > MAX_TASK_PRIORITY:
+        flash("Bitte eine gültige Priorität (1-5) auswählen.", "error")
         return redirect(url_for("task_detail", task_id=task_id))
 
     try:
@@ -2643,13 +2654,14 @@ def edit_task(task_id: int):
     execute(
         """
         UPDATE tasks
-        SET title = ?, description = ?, due_date = ?, assignee_id = ?, contact_person = ?, contact_person_user_id = ?, ticket_category = ?, room = ?, updated_at = ?
+        SET title = ?, description = ?, due_date = ?, priority = ?, assignee_id = ?, contact_person = ?, contact_person_user_id = ?, ticket_category = ?, room = ?, updated_at = ?
         WHERE id = ?
         """,
         (
             title,
             description,
             normalized_due_date,
+            priority,
             assignee_ids[0] if assignee_ids else None,
             contact_user["username"],
             contact_person_user_id,

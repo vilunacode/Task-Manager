@@ -634,27 +634,43 @@ body[data-theme="dark"] .task-due-today {
 }
 
 .task-priority-chip.priority-1 {
-  background: #64748b;
+  background: #b35a62;
 }
 
 .task-priority-chip.priority-2 {
-  background: #0f766e;
+  background: #b67a3c;
 }
 
 .task-priority-chip.priority-3 {
-  background: #2563eb;
+  background: #3f6fb1;
 }
 
 .task-priority-chip.priority-4 {
-  background: #f59e0b;
+  background: #3c7d76;
 }
 
 .task-priority-chip.priority-5 {
-  background: #dc2626;
+  background: #667085;
 }
 
-body[data-theme="dark"] .task-priority-chip {
-  background: #475569;
+body[data-theme="dark"] .task-priority-chip.priority-1 {
+  background: #964a54;
+}
+
+body[data-theme="dark"] .task-priority-chip.priority-2 {
+  background: #996732;
+}
+
+body[data-theme="dark"] .task-priority-chip.priority-3 {
+  background: #365f99;
+}
+
+body[data-theme="dark"] .task-priority-chip.priority-4 {
+  background: #356d67;
+}
+
+body[data-theme="dark"] .task-priority-chip.priority-5 {
+  background: #5d6875;
 }
 
 .task-card-meta {
