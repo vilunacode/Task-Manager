@@ -1,7 +1,9 @@
 import os
 import calendar as pycalendar
+import configparser
 import re
 import sqlite3
+from urllib.parse import quote_plus
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from zoneinfo import ZoneInfo
@@ -20,7 +22,176 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-DATABASE = os.path.join(BASE_DIR, "task_manager.db")
+DEFAULT_CONFIG_FILENAME = "config.ini"
+DEFAULT_DATABASE_FILENAME = "task_manager.db"
+SUPPORTED_DATABASE_DRIVERS = {"sqlite", "postgres", "postgresql", "mysql", "mariadb"}
+
+
+def parse_bool(value: str, fallback: bool) -> bool:
+    normalized = (value or "").strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return fallback
+
+
+def parse_int(value: str, fallback: int, minimum: int | None = None, maximum: int | None = None) -> int:
+    try:
+        parsed = int((value or "").strip())
+    except (TypeError, ValueError):
+        return fallback
+
+    if minimum is not None:
+        parsed = max(minimum, parsed)
+    if maximum is not None:
+        parsed = min(maximum, parsed)
+    return parsed
+
+
+def resolve_sqlite_path(base_dir: str, database_url: str, database_path: str, database_name: str) -> str:
+    if database_url:
+        if not database_url.startswith("sqlite:///"):
+            raise ValueError("Only sqlite:/// URLs are supported with sqlite driver.")
+        sqlite_path = database_url[len("sqlite:///") :].strip()
+        if not sqlite_path:
+            raise ValueError("Database URL must include a path after sqlite:///.")
+        return sqlite_path if os.path.isabs(sqlite_path) else os.path.join(base_dir, sqlite_path)
+
+    cleaned_name = (database_name or "").strip()
+    fallback_path = f"{cleaned_name}.db" if cleaned_name else DEFAULT_DATABASE_FILENAME
+    cleaned_path = (database_path or "").strip() or fallback_path
+    return cleaned_path if os.path.isabs(cleaned_path) else os.path.join(base_dir, cleaned_path)
+
+
+def build_external_database_url(driver: str, host: str, port: int, name: str, username: str, password: str) -> str:
+    scheme = "postgresql" if driver in {"postgres", "postgresql"} else "mysql"
+    host_part = (host or "127.0.0.1").strip()
+    name_part = (name or "task_manager").strip()
+    user_part = quote_plus((username or "").strip())
+    pass_part = quote_plus((password or "").strip())
+
+    auth = ""
+    if user_part and pass_part:
+        auth = f"{user_part}:{pass_part}@"
+    elif user_part:
+        auth = f"{user_part}@"
+
+    return f"{scheme}://{auth}{host_part}:{port}/{name_part}"
+
+
+def load_database_config(parser: configparser.ConfigParser, base_dir: str) -> dict:
+    driver = (
+        os.environ.get("TASK_MANAGER_DB_DRIVER", "").strip().lower()
+        or parser.get("database", "driver", fallback="sqlite").strip().lower()
+    )
+    if driver not in SUPPORTED_DATABASE_DRIVERS:
+        raise ValueError(f"Unsupported database driver '{driver}'.")
+
+    host = os.environ.get("TASK_MANAGER_DB_HOST", "").strip() or parser.get(
+        "database", "host", fallback="127.0.0.1"
+    )
+    default_port = 5432 if driver in {"postgres", "postgresql"} else 3306
+    port = parse_int(
+        os.environ.get("TASK_MANAGER_DB_PORT", "").strip()
+        or parser.get("database", "port", fallback=str(default_port)),
+        fallback=default_port,
+        minimum=1,
+        maximum=65535,
+    )
+    name = os.environ.get("TASK_MANAGER_DB_NAME", "").strip() or parser.get(
+        "database", "name", fallback="task_manager"
+    )
+    username = os.environ.get("TASK_MANAGER_DB_USER", "").strip() or parser.get(
+        "database", "username", fallback=""
+    )
+    password = os.environ.get("TASK_MANAGER_DB_PASSWORD", "").strip() or parser.get(
+        "database", "password", fallback=""
+    )
+
+    database_url = os.environ.get("DATABASE_URL", "").strip() or parser.get("database", "url", fallback="")
+    database_path = os.environ.get("DATABASE_PATH", "").strip() or parser.get(
+        "database", "path", fallback=DEFAULT_DATABASE_FILENAME
+    )
+
+    if driver == "sqlite":
+        resolved_database_path = resolve_sqlite_path(base_dir, database_url, database_path, name)
+        return {
+            "backend": "sqlite",
+            "path": resolved_database_path,
+            "url": f"sqlite:///{resolved_database_path}",
+            "driver": driver,
+            "host": host,
+            "port": port,
+            "name": name,
+            "username": username,
+            "password": password,
+        }
+
+    resolved_url = database_url or build_external_database_url(driver, host, port, name, username, password)
+    return {
+        "backend": "external",
+        "path": "",
+        "url": resolved_url,
+        "driver": driver,
+        "host": host,
+        "port": port,
+        "name": name,
+        "username": username,
+        "password": password,
+    }
+
+
+def load_runtime_config(base_dir: str) -> dict:
+    config_file_path = os.environ.get("TASK_MANAGER_CONFIG", "").strip() or os.path.join(
+        base_dir, DEFAULT_CONFIG_FILENAME
+    )
+
+    parser = configparser.ConfigParser()
+    if os.path.exists(config_file_path):
+        parser.read(config_file_path, encoding="utf-8")
+
+    host = os.environ.get("TASK_MANAGER_HOST", "").strip() or parser.get(
+        "server", "host", fallback="0.0.0.0"
+    )
+    port = parse_int(
+        os.environ.get("TASK_MANAGER_PORT", "").strip()
+        or parser.get("server", "port", fallback="5000"),
+        fallback=5000,
+        minimum=1,
+        maximum=65535,
+    )
+    debug = parse_bool(
+        os.environ.get("TASK_MANAGER_DEBUG", "").strip()
+        or parser.get("server", "debug", fallback="true"),
+        fallback=True,
+    )
+
+    secret_key = os.environ.get("SECRET_KEY", "").strip() or parser.get(
+        "app", "secret_key", fallback="dev-secret-change-me"
+    )
+    timezone_name = os.environ.get("APP_TIMEZONE", "").strip() or parser.get(
+        "app", "timezone", fallback="Europe/Berlin"
+    )
+
+    database_config = load_database_config(parser, base_dir)
+
+    return {
+        "host": host,
+        "port": port,
+        "debug": debug,
+        "secret_key": secret_key,
+        "timezone_name": timezone_name,
+        "database_backend": database_config["backend"],
+        "database_driver": database_config["driver"],
+        "database_path": database_config["path"],
+        "database_url": database_config["url"],
+        "config_file_path": config_file_path,
+    }
+
+
+RUNTIME_CONFIG = load_runtime_config(BASE_DIR)
+DATABASE = RUNTIME_CONFIG["database_path"]
 
 STATUS_OPEN = "open"
 STATUS_IN_PROGRESS = "in_progress"
@@ -118,11 +289,19 @@ MAX_USERNAME_LENGTH = 13
 
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
-APP_TIMEZONE = ZoneInfo(os.environ.get("APP_TIMEZONE", "Europe/Berlin"))
+app.config["SECRET_KEY"] = RUNTIME_CONFIG["secret_key"]
+try:
+    APP_TIMEZONE = ZoneInfo(RUNTIME_CONFIG["timezone_name"])
+except Exception:  # pylint: disable=broad-except
+    APP_TIMEZONE = ZoneInfo("Europe/Berlin")
 
 
 def get_db() -> sqlite3.Connection:
+    if RUNTIME_CONFIG["database_backend"] != "sqlite":
+        raise RuntimeError(
+            "Externe Datenbanken sind in dieser Version noch nicht direkt unterstützt. "
+            "Bitte 'database.driver = sqlite' nutzen."
+        )
     if "db" not in g:
         conn = sqlite3.connect(DATABASE)
         conn.row_factory = sqlite3.Row
@@ -3073,4 +3252,8 @@ def admin_closed_tasks():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(
+        host=RUNTIME_CONFIG["host"],
+        port=RUNTIME_CONFIG["port"],
+        debug=RUNTIME_CONFIG["debug"],
+    )

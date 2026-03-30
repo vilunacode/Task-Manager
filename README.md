@@ -118,6 +118,8 @@ pip install -r requirements.txt
 python app.py
 ```
 
+Optional: Vor dem Start kannst du die Datei `config.ini` anpassen (Host, Port, Debug, Zeitzone, DB-Pfad/DB-URL).
+
 4. Browser öffnen
 
 ```text
@@ -125,6 +127,62 @@ http://localhost:5000
 ```
 
 Beim ersten Start erfolgt eine Weiterleitung auf `/setup`.
+
+## Konfiguration (einfach anpassbar)
+
+Die Anwendung liest beim Start automatisch die Datei `config.ini` im Projektordner ein.
+
+Beispielwerte:
+
+```ini
+[server]
+host = 0.0.0.0
+port = 5000
+debug = true
+
+[app]
+secret_key = dev-secret-change-me
+timezone = Europe/Berlin
+
+[database]
+driver = sqlite
+host = 127.0.0.1
+port = 5432
+name = task_manager
+username =
+password =
+url =
+path = task_manager.db
+```
+
+Hinweise:
+
+- `host`: `127.0.0.1` nur lokal, `0.0.0.0` im Netzwerk erreichbar
+- `port`: z. B. `5000`, `8080`, `9000`
+- Datenbankfelder: `database.host`, `database.port`, `database.name`, `database.username`, `database.password`
+- `database.driver`: `sqlite`, `postgres`, `postgresql`, `mysql`, `mariadb`
+- `database.path`: Pfad zur SQLite-Datei (relativ oder absolut, wenn `driver=sqlite`)
+- `database.url`: direkte Verbindungs-URL (hat Prioritaet)
+- Hinweis: Aktuell arbeitet die Anwendung intern mit SQLite. Externe Treiber sind vorbereitet, aber noch nicht aktiv nutzbar.
+
+### Environment-Variablen (optional)
+
+Folgende Variablen koennen die `config.ini` ueberschreiben:
+
+- `TASK_MANAGER_CONFIG` (Pfad zu alternativer ini-Datei)
+- `TASK_MANAGER_HOST`
+- `TASK_MANAGER_PORT`
+- `TASK_MANAGER_DEBUG`
+- `SECRET_KEY`
+- `APP_TIMEZONE`
+- `DATABASE_PATH`
+- `DATABASE_URL`
+- `TASK_MANAGER_DB_DRIVER`
+- `TASK_MANAGER_DB_HOST`
+- `TASK_MANAGER_DB_PORT`
+- `TASK_MANAGER_DB_NAME`
+- `TASK_MANAGER_DB_USER`
+- `TASK_MANAGER_DB_PASSWORD`
 
 ## Wichtige Hinweise
 
