@@ -1538,6 +1538,7 @@ def overview_tasks_api():
                 "created_at": task["created_at"],
                 "created_at_display": format_system_datetime_for_display(task["created_at"]),
                 "due_date_display": format_datetime_for_display(task["due_date"]),
+                "priority": int(task.get("priority") or DEFAULT_TASK_PRIORITY),
                 "assignees": task["assignees"],
             }
         )

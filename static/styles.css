@@ -1364,11 +1364,12 @@ body[data-theme="dark"] .overview-column {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: #fff;
-  padding: 8px;
+  padding: 8px 8px 30px;
   display: grid;
   gap: 4px;
   width: var(--overview-task-card-width, 220px);
   min-height: var(--overview-task-card-min-height, 94px);
+  position: relative;
 }
 
 body[data-theme="dark"] .overview-task-card {
@@ -1422,6 +1423,12 @@ body[data-theme="dark"] .overview-task-card {
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 2px;
+}
+
+.overview-priority-chip {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
 }
 
 table {
