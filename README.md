@@ -4,7 +4,7 @@ Browserbasierter Task-Manager auf Flask-Basis mit Rollen, Dashboard-Board, Ping-
 
 ## Überblick
 
-Die Anwendung richtet sich an Teams, die Aufgaben in einem visuellen Board verwalten möchten. 
+Die Anwendung richtet sich an Teams, die Aufgaben in einem visuellen Board verwalten möchten.
 Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workflow über Erwähnungen, Kalenderfunktionen sowie umfangreiche Einstellungen für Admins.
 
 ## Funktionsumfang
@@ -25,13 +25,14 @@ Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workf
 - Bearbeiter per Drag-and-Drop aus der Team-Sidebar auf Tasks zuweisen
 - Task-Erstellung mit:
   - Titel, Beschreibung
-  - Kategorie
+  - Kategorie (vom Admin frei definierbar)
   - Priorität `1-5`
   - Raum
-  - Ansprechpartner
-  - Fälligkeitsdatum/-zeit
+  - Ansprechpartner (registrierter Nutzer oder freier Text über „Andere...")
+  - Fälligkeitsdatum/-zeit (optional)
 - Prioritäts-Badge auf Task-Karten (1 bis 5, farblich abgestuft)
 - Bestehende Tasks können in der Detailansicht inkl. Priorität bearbeitet werden
+- Beim Erstellen eines Tickets ohne angelegte Kategorie erscheint ein Hinweis-Popup
 
 ### Pings & Kommentare
 
@@ -46,36 +47,36 @@ Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workf
 ### Benutzer, Rollen & Teamdarstellung
 
 - Rollenmodell:
-  - Admin
-  - Built-in Rollen
-  - Benutzerdefinierte Rollen
+  - Admin (immer vorhanden, Farbe anpassbar)
+  - Benutzerdefinierte Rollen (vom Admin frei erstellt, mit eigener Farbe)
+- Rollen werden in der Benutzerverwaltung verwaltet (erstellen, Farbe ändern, löschen)
 - Benutzerverwaltung (anlegen, bearbeiten, löschen) mit Schutzlogik (z. B. letzter Admin)
 - Zusätzliche Nutzerattribute:
   - Aktiv/Inaktiv
   - Mitarbeitertyp: `Mitarbeiter` oder `Trainingsmitarbeiter`
   - `Im Dashboard ausblenden` (Invisible)
 - Teamliste im Dashboard gruppiert und visuell getrennt:
-  - Trainingsmitarbeiter
   - Mitarbeiter
+  - Trainingsmitarbeiter
   - Inaktive
 - Inaktive Nutzer werden visuell gedimmt dargestellt
 - Dashboard-invisible Nutzer erscheinen nicht in:
   - Team-Sidebar
-  - Bearbeiter-/Ansprechpartner-Auswahllisten im Dashboard
+  - Bearbeiter-/Ansprechpartner-Auswahllisten
   - Zuweisungsworkflows
 
 ### Kalender & Einstellungen
 
-- Monatskalender mit persönlichen Terminen und Task-Terminen
+- Monatskalender mit persönlichen Terminen und Task-Terminen (nur Tasks mit Fälligkeitsdatum)
 - Persönliche Ansichten und Team-Filter
 - User-Einstellungen:
   - Light/Dark Theme
   - Kartenansicht (kompakt/erweitert)
-- Admin-Einstellungen für UI/Tuning:
-  - Farben (Rollen)
-  - Größen/Layoutwerte
-  - Refresh-Intervalle
-  - Benachrichtigungston
+- Admin-Einstellungen:
+  - Highlight-Dauer für neue Tasks
+  - Live-Refresh-Intervall
+  - Benachrichtigungston bei neuer Task
+  - Ticket-Kategorien verwalten (erstellen, löschen)
 
 ## Technischer Stack
 
@@ -162,12 +163,12 @@ Hinweise:
 - Datenbankfelder: `database.host`, `database.port`, `database.name`, `database.username`, `database.password`
 - `database.driver`: `sqlite`, `postgres`, `postgresql`, `mysql`, `mariadb`
 - `database.path`: Pfad zur SQLite-Datei (relativ oder absolut, wenn `driver=sqlite`)
-- `database.url`: direkte Verbindungs-URL (hat Prioritaet)
+- `database.url`: direkte Verbindungs-URL (hat Priorität)
 - Hinweis: Aktuell arbeitet die Anwendung intern mit SQLite. Externe Treiber sind vorbereitet, aber noch nicht aktiv nutzbar.
 
 ### Environment-Variablen (optional)
 
-Folgende Variablen koennen die `config.ini` ueberschreiben:
+Folgende Variablen können die `config.ini` überschreiben:
 
 - `TASK_MANAGER_CONFIG` (Pfad zu alternativer ini-Datei)
 - `TASK_MANAGER_HOST`

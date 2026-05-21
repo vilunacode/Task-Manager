@@ -142,7 +142,6 @@ main.container {
   top: 84px;
   width: 220px;
   justify-self: end;
-  transform: translateX(80px);
 }
 
 .user-badge-list {
@@ -201,18 +200,6 @@ body[data-theme="dark"] .user-task-score {
 
 .badge-admin {
   background: var(--role-admin-color, #facc15);
-}
-
-.badge-system {
-  background: var(--role-system-color, #dc2626);
-}
-
-.badge-dev {
-  background: var(--role-dev-color, #2563eb);
-}
-
-.badge-team {
-  background: var(--role-team-color, #0f766e);
 }
 
 .card {

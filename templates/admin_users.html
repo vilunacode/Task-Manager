@@ -168,40 +168,98 @@
     <label>Neue Rolle erstellen
       <input type="text" name="role_label" placeholder="z. B. Projektleiter" required>
     </label>
+    <label>Farbe
+      <input type="color" name="role_color" value="#64748b" required>
+    </label>
     <div class="actions-row">
       <button type="submit" class="secondary">Rolle erstellen</button>
     </div>
   </form>
 
-  {% if role_management_entries %}
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
           <th>Rolle</th>
-          <th>Typ</th>
-          <th>Aktion</th>
+          <th>Farbe</th>
+          <th>Bearbeiten</th>
+          <th>Löschen</th>
         </tr>
       </thead>
       <tbody>
+        <tr>
+          <td>Admin</td>
+          <td>
+            <span class="initial-badge badge-admin">ADM</span>
+          </td>
+          <td>
+            <button type="button" onclick="document.getElementById('edit-role-dialog-admin').showModal()">Farbe ändern</button>
+            <dialog id="edit-role-dialog-admin" class="task-dialog">
+              <form method="post" class="form-grid two-columns task-edit-form">
+                <div class="dialog-head full">
+                  <h2>Rolle bearbeiten: Admin</h2>
+                  <button type="button" class="link-btn" onclick="document.getElementById('edit-role-dialog-admin').close()">Schließen</button>
+                </div>
+                <input type="hidden" name="action" value="update-role">
+                <input type="hidden" name="role_key" value="admin">
+                <label>Farbe
+                  <input type="color" name="role_color" value="{{ admin_color }}" required>
+                </label>
+                <div class="actions-row">
+                  <button type="submit">Speichern</button>
+                </div>
+              </form>
+            </dialog>
+          </td>
+          <td></td>
+        </tr>
         {% for role_entry in role_management_entries %}
         <tr>
           <td>{{ role_entry['label'] }}</td>
-          <td>{{ 'Standard' if role_entry['is_builtin'] else 'Benutzerdefiniert' }}</td>
           <td>
-            <form method="post" onsubmit="return confirm('Rolle wirklich entfernen?');">
-              <input type="hidden" name="action" value="delete-role">
-              <input type="hidden" name="role_key" value="{{ role_entry['role_key'] }}">
-              <button type="submit" class="danger">Rolle entfernen</button>
-            </form>
+            <span class="initial-badge badge-role-{{ role_entry['role_key'] }}">{{ role_entry['label'][:2] | upper }}</span>
+          </td>
+          <td>
+            <button type="button" onclick="document.getElementById('edit-role-dialog-{{ role_entry.role_key }}').showModal()">Farbe ändern</button>
+            <dialog id="edit-role-dialog-{{ role_entry.role_key }}" class="task-dialog">
+              <form method="post" class="form-grid two-columns task-edit-form">
+                <div class="dialog-head full">
+                  <h2>Rolle bearbeiten: {{ role_entry['label'] }}</h2>
+                  <button type="button" class="link-btn" onclick="document.getElementById('edit-role-dialog-{{ role_entry.role_key }}').close()">Schließen</button>
+                </div>
+                <input type="hidden" name="action" value="update-role">
+                <input type="hidden" name="role_key" value="{{ role_entry['role_key'] }}">
+                <label>Farbe
+                  <input type="color" name="role_color" value="{{ role_entry['color'] }}" required>
+                </label>
+                <div class="actions-row">
+                  <button type="submit">Speichern</button>
+                </div>
+              </form>
+            </dialog>
+          </td>
+          <td>
+            <button type="button" class="danger" onclick="document.getElementById('delete-role-dialog-{{ role_entry.role_key }}').showModal()">Entfernen</button>
+            <dialog id="delete-role-dialog-{{ role_entry.role_key }}" class="task-dialog">
+              <div class="task-edit-form">
+                <div class="dialog-head full">
+                  <h2>Rolle entfernen</h2>
+                  <button type="button" class="link-btn" onclick="document.getElementById('delete-role-dialog-{{ role_entry.role_key }}').close()">Schließen</button>
+                </div>
+                <p>Soll die Rolle <strong>{{ role_entry['label'] }}</strong> wirklich entfernt werden?</p>
+                <form method="post" class="actions-row">
+                  <input type="hidden" name="action" value="delete-role">
+                  <input type="hidden" name="role_key" value="{{ role_entry['role_key'] }}">
+                  <button type="button" class="secondary" onclick="document.getElementById('delete-role-dialog-{{ role_entry.role_key }}').close()">Abbrechen</button>
+                  <button type="submit" class="danger">Ja, entfernen</button>
+                </form>
+              </div>
+            </dialog>
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  {% else %}
-  <p class="muted">Keine löschbaren Rollen vorhanden.</p>
-  {% endif %}
 </section>
 {% endblock %}

@@ -163,8 +163,8 @@ def load_runtime_config(base_dir: str) -> dict:
     )
     debug = parse_bool(
         os.environ.get("TASK_MANAGER_DEBUG", "").strip()
-        or parser.get("server", "debug", fallback="true"),
-        fallback=True,
+        or parser.get("server", "debug", fallback="false"),
+        fallback=False,
     )
 
     secret_key = os.environ.get("SECRET_KEY", "").strip() or parser.get(
@@ -202,70 +202,11 @@ VALID_PING_TABS = {"unread", "read"}
 MIN_TASK_PRIORITY = 1
 MAX_TASK_PRIORITY = 5
 DEFAULT_TASK_PRIORITY = 3
-TICKET_CATEGORY_HARDWARE = "hardware"
-TICKET_CATEGORY_SOFTWARE = "software"
-TICKET_CATEGORY_NETWORK_INTERNET = "network_internet"
-TICKET_CATEGORY_SECURITY = "security"
-TICKET_CATEGORY_IT_SERVICE_ORDER = "it_service_order"
-TICKET_CATEGORY_WORKSTATION_SETUP = "workstation_setup"
-TICKET_CATEGORY_OTHER = "other"
-VALID_TICKET_CATEGORIES = {
-    TICKET_CATEGORY_HARDWARE,
-    TICKET_CATEGORY_SOFTWARE,
-    TICKET_CATEGORY_NETWORK_INTERNET,
-    TICKET_CATEGORY_SECURITY,
-    TICKET_CATEGORY_IT_SERVICE_ORDER,
-    TICKET_CATEGORY_WORKSTATION_SETUP,
-    TICKET_CATEGORY_OTHER,
-}
-TICKET_CATEGORY_LABELS = {
-    TICKET_CATEGORY_HARDWARE: "Hardware",
-    TICKET_CATEGORY_SOFTWARE: "Software",
-    TICKET_CATEGORY_NETWORK_INTERNET: "Netzwerk / Internet",
-    TICKET_CATEGORY_SECURITY: "Sicherheit",
-    TICKET_CATEGORY_IT_SERVICE_ORDER: "IT-Service / Bestellung",
-    TICKET_CATEGORY_WORKSTATION_SETUP: "Arbeitsplatz / Setup",
-    TICKET_CATEGORY_OTHER: "Sonstiges",
-}
-ROLE_SYSTEM_INTEGRATOR = "system_integrator"
-ROLE_APPLICATION_DEVELOPER = "application_developer"
-ROLE_TEAM = "team"
-VALID_ROLES = {ROLE_SYSTEM_INTEGRATOR, ROLE_APPLICATION_DEVELOPER, ROLE_TEAM}
-BUILTIN_ROLE_CONFIG = {
-    ROLE_TEAM: {"label": "Team", "setting_key": "role_color_team", "badge_class": "badge-team"},
-    ROLE_SYSTEM_INTEGRATOR: {
-        "label": "Systemintegrator",
-        "setting_key": "role_color_system",
-        "badge_class": "badge-system",
-    },
-    ROLE_APPLICATION_DEVELOPER: {
-        "label": "Anwendungsentwickler",
-        "setting_key": "role_color_dev",
-        "badge_class": "badge-dev",
-    },
-}
 
 DEFAULT_APP_SETTINGS = {
     "new_task_highlight_seconds": "120",
     "overview_refresh_interval_seconds": "1",
-    "general_container_width_px": "1760",
-    "general_main_min_height_px": "0",
-    "general_dashboard_shell_width_px": "1080",
-    "dashboard_general_min_height_px": "0",
-    "overview_general_width_px": "1720",
-    "overview_general_min_height_px": "0",
-    "dashboard_category_min_width_px": "320",
-    "dashboard_category_min_height_px": "0",
-    "overview_category_width_px": "0",
-    "overview_category_min_height_px": "0",
-    "dashboard_task_width_px": "360",
-    "dashboard_task_min_height_px": "0",
-    "overview_task_width_px": "220",
-    "overview_task_min_height_px": "94",
     "role_color_admin": "#facc15",
-    "role_color_system": "#dc2626",
-    "role_color_dev": "#2563eb",
-    "role_color_team": "#0f766e",
     "new_task_tone": "classic",
 }
 
@@ -286,6 +227,9 @@ MEMBER_TYPE_REGULAR = "regular"
 MEMBER_TYPE_TRAINEE = "trainee"
 VALID_MEMBER_TYPES = {MEMBER_TYPE_REGULAR, MEMBER_TYPE_TRAINEE}
 MAX_USERNAME_LENGTH = 13
+MAX_TASK_TITLE_LENGTH = 200
+MAX_TASK_DESCRIPTION_LENGTH = 5000
+MAX_TASK_ROOM_LENGTH = 100
 
 
 app = Flask(__name__)
@@ -412,6 +356,20 @@ def init_db() -> None:
             role_key TEXT PRIMARY KEY,
             created_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS ticket_categories (
+            category_key TEXT PRIMARY KEY,
+            label TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_task_assignees_user ON task_assignees(user_id);
+        CREATE INDEX IF NOT EXISTS idx_task_assignees_task ON task_assignees(task_id);
+        CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at);
+        CREATE INDEX IF NOT EXISTS idx_user_ping_reads_user ON user_ping_reads(user_id);
+        CREATE INDEX IF NOT EXISTS idx_calendar_events_user ON calendar_events(user_id);
         """
     )
 
@@ -448,9 +406,7 @@ def init_db() -> None:
     if "contact_person_user_id" not in task_columns:
         db.execute("ALTER TABLE tasks ADD COLUMN contact_person_user_id INTEGER")
     if "ticket_category" not in task_columns:
-        db.execute(
-            f"ALTER TABLE tasks ADD COLUMN ticket_category TEXT NOT NULL DEFAULT '{TICKET_CATEGORY_OTHER}'"
-        )
+        db.execute("ALTER TABLE tasks ADD COLUMN ticket_category TEXT NOT NULL DEFAULT 'other'")
     if "room" not in task_columns:
         db.execute("ALTER TABLE tasks ADD COLUMN room TEXT")
     if "priority" not in task_columns:
@@ -471,22 +427,47 @@ def init_db() -> None:
     db.execute(
         """
         UPDATE tasks
-        SET ticket_category = ?
+        SET ticket_category = 'other'
         WHERE ticket_category IS NULL OR TRIM(ticket_category) = ''
-        """,
-        (TICKET_CATEGORY_OTHER,),
+        """
     )
 
-    valid_categories = tuple(sorted(VALID_TICKET_CATEGORIES))
-    placeholders = ",".join(["?"] * len(valid_categories))
-    db.execute(
-        f"""
-        UPDATE tasks
-        SET ticket_category = ?
-        WHERE lower(ticket_category) NOT IN ({placeholders})
-        """,
-        (TICKET_CATEGORY_OTHER, *valid_categories),
-    )
+    # Migrate old hardcoded ticket categories to the ticket_categories table.
+    legacy_category_seeds = [
+        ("hardware", "Hardware"),
+        ("software", "Software"),
+        ("network_internet", "Netzwerk / Internet"),
+        ("security", "Sicherheit"),
+        ("it_service_order", "IT-Service / Bestellung"),
+        ("workstation_setup", "Arbeitsplatz / Setup"),
+        ("other", "Sonstiges"),
+    ]
+    _migration_ts = now_iso()
+    for _cat_key, _cat_label in legacy_category_seeds:
+        used = db.execute(
+            "SELECT 1 FROM tasks WHERE ticket_category = ? LIMIT 1", (_cat_key,)
+        ).fetchone()
+        if used is not None:
+            db.execute(
+                "INSERT OR IGNORE INTO ticket_categories (category_key, label, created_at) VALUES (?, ?, ?)",
+                (_cat_key, _cat_label, _migration_ts),
+            )
+
+    # Migrate old builtin roles to custom_roles so existing user data is preserved.
+    legacy_role_seeds = [
+        ("team", "Team", "#0f766e"),
+        ("system_integrator", "Systemintegrator", "#dc2626"),
+        ("application_developer", "Anwendungsentwickler", "#2563eb"),
+    ]
+    for _role_key, _role_label, _role_color in legacy_role_seeds:
+        used = db.execute(
+            "SELECT 1 FROM users WHERE role = ? LIMIT 1", (_role_key,)
+        ).fetchone()
+        if used is not None:
+            db.execute(
+                "INSERT OR IGNORE INTO custom_roles (role_key, label, color, created_at) VALUES (?, ?, ?, ?)",
+                (_role_key, _role_label, _role_color, _migration_ts),
+            )
 
     # Backfill contact_person_user_id for legacy rows where contact person was stored as plain text.
     db.execute(
@@ -514,10 +495,9 @@ def init_db() -> None:
     db.execute(
         """
         UPDATE users
-        SET role = ?
+        SET role = 'application_developer'
         WHERE (role IS NULL OR TRIM(role) = '') AND is_admin = 0
-        """,
-        (ROLE_APPLICATION_DEVELOPER,),
+        """
     )
 
     db.execute(
@@ -554,30 +534,7 @@ def init_db() -> None:
             (key, value),
         )
 
-    # Keep existing installs in sync with the narrower dashboard default.
-    db.execute(
-        """
-        UPDATE app_settings
-        SET value = '1080'
-        WHERE key = 'general_dashboard_shell_width_px' AND value = '1200'
-        """
-    )
-
-    # Old installs used 0 for category min width which had little visible effect.
-    # Normalize that legacy value to a practical default width.
-    db.execute(
-        """
-        UPDATE app_settings
-        SET value = '320'
-        WHERE key = 'dashboard_category_min_width_px' AND value = '0'
-        """
-    )
     db.commit()
-
-
-@app.before_request
-def ensure_db_initialized():
-    init_db()
 
 
 def query_one(query: str, params=()):
@@ -597,14 +554,22 @@ def execute(query: str, params=()):
     return cur
 
 
+def execute_many(query: str, params_list) -> None:
+    db = get_db()
+    db.executemany(query, params_list)
+    db.commit()
+
+
 def app_settings() -> dict[str, str]:
-    stored = {
-        row["key"]: row["value"]
-        for row in query_all("SELECT key, value FROM app_settings")
-    }
-    merged = dict(DEFAULT_APP_SETTINGS)
-    merged.update(stored)
-    return merged
+    if "app_settings" not in g:
+        stored = {
+            row["key"]: row["value"]
+            for row in query_all("SELECT key, value FROM app_settings")
+        }
+        merged = dict(DEFAULT_APP_SETTINGS)
+        merged.update(stored)
+        g.app_settings = merged
+    return g.app_settings
 
 
 def set_app_setting(key: str, value: str) -> None:
@@ -616,6 +581,7 @@ def set_app_setting(key: str, value: str) -> None:
         """,
         (key, value),
     )
+    g.pop("app_settings", None)
 
 
 def parse_int_setting(value: str, *, min_value: int, max_value: int) -> int | None:
@@ -788,18 +754,6 @@ def custom_roles():
     )
 
 
-def disabled_roles() -> set[str]:
-    if "disabled_roles_set" not in g:
-        rows = query_all("SELECT role_key FROM disabled_roles")
-        g.disabled_roles_set = {row["role_key"] for row in rows}
-    return g.disabled_roles_set
-
-
-def active_builtin_roles() -> list[str]:
-    disabled = disabled_roles()
-    return [role for role in BUILTIN_ROLE_CONFIG if role not in disabled]
-
-
 def custom_roles_map() -> dict[str, dict]:
     if "custom_roles_map" not in g:
         g.custom_roles_map = {row["role_key"]: dict(row) for row in custom_roles()}
@@ -807,8 +761,7 @@ def custom_roles_map() -> dict[str, dict]:
 
 
 def active_custom_roles() -> list[sqlite3.Row]:
-    disabled = disabled_roles()
-    return [role for role in custom_roles() if role["role_key"] not in disabled]
+    return list(custom_roles())
 
 
 def normalize_custom_role_key(label: str) -> str:
@@ -817,126 +770,93 @@ def normalize_custom_role_key(label: str) -> str:
     return normalized[:40]
 
 
+def normalize_category_key(label: str) -> str:
+    lowered = label.strip().lower()
+    normalized = re.sub(r"[^a-z0-9]+", "_", lowered).strip("_")
+    return normalized[:40]
+
+
+def get_ticket_categories():
+    if "ticket_categories" not in g:
+        g.ticket_categories = query_all(
+            "SELECT category_key, label, created_at FROM ticket_categories ORDER BY label COLLATE NOCASE ASC"
+        )
+    return g.ticket_categories
+
+
 def role_options() -> list[dict[str, str]]:
-    options = [
-        {"value": "admin", "label": "Admin"},
-    ]
-    for role_key in active_builtin_roles():
-        options.append({"value": role_key, "label": BUILTIN_ROLE_CONFIG[role_key]["label"]})
+    options = [{"value": "admin", "label": "Admin"}]
     for role in active_custom_roles():
         options.append({"value": role["role_key"], "label": role["label"]})
     return options
 
 
 def normalize_role(value: str) -> str:
-    if value in VALID_ROLES or value == "admin":
-        return value if value in active_builtin_roles() or value == "admin" else ""
+    if value == "admin":
+        return "admin"
     if value in custom_roles_map():
-        if value in disabled_roles():
-            return ""
         return value
     return ""
 
 
 def normalize_ticket_category(value: str) -> str:
     normalized = value.strip().lower()
-    if normalized in VALID_TICKET_CATEGORIES:
-        return normalized
+    for cat in get_ticket_categories():
+        if cat["category_key"] == normalized:
+            return normalized
     return ""
 
 
 def ticket_category_label(value: str | None) -> str:
     normalized = (value or "").strip().lower()
-    return TICKET_CATEGORY_LABELS.get(normalized, TICKET_CATEGORY_LABELS[TICKET_CATEGORY_OTHER])
+    for cat in get_ticket_categories():
+        if cat["category_key"] == normalized:
+            return cat["label"]
+    return normalized or "-"
 
 
 def ticket_category_options() -> list[dict[str, str]]:
-    return [
-        {"value": key, "label": label}
-        for key, label in TICKET_CATEGORY_LABELS.items()
-    ]
+    return [{"value": cat["category_key"], "label": cat["label"]} for cat in get_ticket_categories()]
 
 
 def role_label(role: str, is_admin: int) -> str:
     if is_admin:
         return "Admin"
-    if role in BUILTIN_ROLE_CONFIG:
-        return BUILTIN_ROLE_CONFIG[role]["label"]
     custom = custom_roles_map().get(role)
     if custom is not None:
         return custom["label"]
-    return "Anwendungsentwickler"
+    return role or "-"
 
 
 def badge_color_class(role: str, is_admin: int) -> str:
     if is_admin:
         return "badge-admin"
-    if role in BUILTIN_ROLE_CONFIG:
-        return BUILTIN_ROLE_CONFIG[role]["badge_class"]
     if role in custom_roles_map():
         return f"badge-role-{role}"
-    return "badge-dev"
+    return "badge-role-unknown"
 
 
 def badge_color_value(role: str, is_admin: int) -> str:
-    settings = app_settings()
     if is_admin:
-        return settings.get("role_color_admin", "#facc15")
-    if role in BUILTIN_ROLE_CONFIG:
-        key = BUILTIN_ROLE_CONFIG[role]["setting_key"]
-        return settings.get(key, "#64748b")
+        return app_settings().get("role_color_admin", "#facc15")
     custom = custom_roles_map().get(role)
     if custom is not None:
         return custom.get("color", "#64748b")
-    return settings.get("role_color_dev", "#2563eb")
+    return "#64748b"
 
 
 def custom_role_css_rules():
-    rules = []
-    for role in active_custom_roles():
-        rules.append(
-            {
-                "class_name": f"badge-role-{role['role_key']}",
-                "color": role["color"],
-            }
-        )
-    return rules
-
-
-def builtin_role_color_fields(settings: dict[str, str]) -> list[dict[str, str]]:
-    fields = []
-    for role_key in active_builtin_roles():
-        cfg = BUILTIN_ROLE_CONFIG[role_key]
-        fields.append(
-            {
-                "role_key": role_key,
-                "label": cfg["label"],
-                "setting_key": cfg["setting_key"],
-                "value": settings.get(cfg["setting_key"], "#64748b"),
-            }
-        )
-    return fields
+    return [
+        {"class_name": f"badge-role-{role['role_key']}", "color": role["color"]}
+        for role in active_custom_roles()
+    ]
 
 
 def role_management_entries():
-    entries = []
-    for role_key in active_builtin_roles():
-        entries.append(
-            {
-                "role_key": role_key,
-                "label": BUILTIN_ROLE_CONFIG[role_key]["label"],
-                "is_builtin": True,
-            }
-        )
-    for role in active_custom_roles():
-        entries.append(
-            {
-                "role_key": role["role_key"],
-                "label": role["label"],
-                "is_builtin": False,
-            }
-        )
-    return entries
+    return [
+        {"role_key": role["role_key"], "label": role["label"], "color": role["color"]}
+        for role in active_custom_roles()
+    ]
 
 
 def task_assignees_map(task_ids: list[int]):
@@ -1018,25 +938,18 @@ def sidebar_users():
             u.role,
             u.is_admin,
             u.is_inactive,
-                        u.member_type,
+            u.member_type,
             COUNT(ta.task_id) AS assigned_task_count
         FROM users u
         LEFT JOIN task_assignees ta ON ta.user_id = u.id
         WHERE COALESCE(u.is_dashboard_invisible, 0) = 0
-                GROUP BY u.id, u.username, u.initials, u.role, u.is_admin, u.is_inactive, u.member_type
+        GROUP BY u.id, u.username, u.initials, u.role, u.is_admin, u.is_inactive, u.member_type
         ORDER BY
-          u.is_inactive ASC,
-                    CASE u.member_type WHEN 'trainee' THEN 0 ELSE 1 END ASC,
-                    u.is_admin DESC,
-          CASE u.role
-            WHEN ? THEN 0
-            WHEN ? THEN 1
-            WHEN ? THEN 2
-            ELSE 3
-          END,
-          u.username ASC
-        """,
-                (ROLE_TEAM, ROLE_SYSTEM_INTEGRATOR, ROLE_APPLICATION_DEVELOPER),
+            u.is_inactive ASC,
+            CASE u.member_type WHEN 'trainee' THEN 0 ELSE 1 END ASC,
+            u.is_admin DESC,
+            u.username ASC
+        """
     )
     return [
         {
@@ -1245,16 +1158,39 @@ def calendar_task_events(user_ids: list[int]):
     if not user_ids:
         return []
 
-    tasks = enrich_tasks_with_assignees(fetch_tasks())
-    user_id_set = set(user_ids)
+    placeholders = ",".join(["?"] * len(user_ids))
+    raw_tasks = query_all(
+        f"""
+        SELECT
+            t.*,
+            c.username AS creator_name,
+            cp.id AS contact_person_user_id,
+            cp.username AS contact_person_name,
+            cp.initials AS contact_person_initials,
+            cp.role AS contact_person_role,
+            cp.is_admin AS contact_person_is_admin,
+            COALESCE(GROUP_CONCAT(DISTINCT au.username), '') AS assignee_names
+        FROM tasks t
+        JOIN users c ON c.id = t.created_by
+        LEFT JOIN users cp ON cp.id = t.contact_person_user_id
+        LEFT JOIN task_assignees ta ON ta.task_id = t.id
+        LEFT JOIN users au ON au.id = ta.user_id
+        WHERE t.due_date IS NOT NULL AND TRIM(t.due_date) != ''
+          AND EXISTS (
+            SELECT 1 FROM task_assignees ta2
+            WHERE ta2.task_id = t.id AND ta2.user_id IN ({placeholders})
+          )
+        GROUP BY t.id
+        ORDER BY t.due_date ASC
+        """,
+        tuple(user_ids),
+    )
+    tasks = enrich_tasks_with_assignees(raw_tasks)
+
     events = []
     for task in tasks:
         due_date = task.get("due_date")
         if not due_date:
-            continue
-
-        assignee_ids = {int(a["id"]) for a in task.get("assignees", [])}
-        if not (assignee_ids & user_id_set):
             continue
 
         assignees = task.get("assignees", [])
@@ -1379,15 +1315,14 @@ def mark_ping_task_as_read(user, task_id: int) -> None:
         return
 
     read_at = now_iso()
-    for comment_id in target_comment_ids:
-        execute(
-            """
-            INSERT INTO user_ping_reads (user_id, comment_id, read_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id, comment_id) DO UPDATE SET read_at = excluded.read_at
-            """,
-            (int(user["id"]), int(comment_id), read_at),
-        )
+    execute_many(
+        """
+        INSERT INTO user_ping_reads (user_id, comment_id, read_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id, comment_id) DO UPDATE SET read_at = excluded.read_at
+        """,
+        [(int(user["id"]), int(comment_id), read_at) for comment_id in target_comment_ids],
+    )
 
 
 def mark_ping_task_as_unread(user, task_id: int) -> int:
@@ -1421,15 +1356,14 @@ def mark_all_pings_as_read_for_user(user) -> int:
         return 0
 
     read_at = now_iso()
-    for comment_id in unread_comment_ids:
-        execute(
-            """
-            INSERT INTO user_ping_reads (user_id, comment_id, read_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id, comment_id) DO UPDATE SET read_at = excluded.read_at
-            """,
-            (int(user["id"]), int(comment_id), read_at),
-        )
+    execute_many(
+        """
+        INSERT INTO user_ping_reads (user_id, comment_id, read_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id, comment_id) DO UPDATE SET read_at = excluded.read_at
+        """,
+        [(int(user["id"]), int(comment_id), read_at) for comment_id in unread_comment_ids],
+    )
 
     return len(unread_comment_ids)
 
@@ -1959,8 +1893,6 @@ def settings_page():
                 flash("Nur Administratoren dürfen diese Einstellungen ändern.", "error")
                 return redirect(url_for("settings_page"))
 
-            current_settings = app_settings()
-
             highlight_seconds = parse_int_setting(
                 request.form.get("new_task_highlight_seconds", ""),
                 min_value=10,
@@ -1971,126 +1903,11 @@ def settings_page():
                 min_value=1,
                 max_value=60,
             )
-            general_container_width = parse_int_setting(
-                request.form.get(
-                    "general_container_width_px",
-                    current_settings["general_container_width_px"],
-                ),
-                min_value=900,
-                max_value=3000,
-            )
-            general_main_min_height = parse_int_setting(
-                request.form.get(
-                    "general_main_min_height_px",
-                    current_settings["general_main_min_height_px"],
-                ),
-                min_value=0,
-                max_value=3000,
-            )
-            general_dashboard_shell_width = parse_int_setting(
-                request.form.get("general_dashboard_shell_width_px", ""),
-                min_value=700,
-                max_value=2600,
-            )
-            dashboard_general_min_height = parse_int_setting(
-                request.form.get("dashboard_general_min_height_px", ""),
-                min_value=0,
-                max_value=3000,
-            )
-            overview_general_width = parse_int_setting(
-                request.form.get("overview_general_width_px", ""),
-                min_value=700,
-                max_value=3000,
-            )
-            overview_general_min_height = parse_int_setting(
-                request.form.get("overview_general_min_height_px", ""),
-                min_value=0,
-                max_value=3000,
-            )
-            dashboard_category_min_width = parse_int_setting(
-                request.form.get("dashboard_category_min_width_px", ""),
-                min_value=220,
-                max_value=700,
-            )
-            dashboard_category_min_height = parse_int_setting(
-                request.form.get("dashboard_category_min_height_px", ""),
-                min_value=0,
-                max_value=3000,
-            )
-            overview_category_width = parse_int_setting(
-                request.form.get("overview_category_width_px", ""),
-                min_value=0,
-                max_value=2200,
-            )
-            overview_category_min_height = parse_int_setting(
-                request.form.get("overview_category_min_height_px", ""),
-                min_value=0,
-                max_value=3000,
-            )
-            dashboard_task_width = parse_int_setting(
-                request.form.get("dashboard_task_width_px", ""),
-                min_value=180,
-                max_value=700,
-            )
-            dashboard_task_min_height = parse_int_setting(
-                request.form.get("dashboard_task_min_height_px", ""),
-                min_value=0,
-                max_value=800,
-            )
-            overview_task_width = parse_int_setting(
-                request.form.get("overview_task_width_px", ""),
-                min_value=140,
-                max_value=600,
-            )
-            overview_task_min_height = parse_int_setting(
-                request.form.get("overview_task_min_height_px", ""),
-                min_value=60,
-                max_value=600,
-            )
-
-            role_color_admin = request.form.get("role_color_admin", "").strip()
-            new_task_tone = request.form.get("new_task_tone", "classic").strip()
-            builtin_color_updates = []
-            for role_key in active_builtin_roles():
-                setting_key = BUILTIN_ROLE_CONFIG[role_key]["setting_key"]
-                color_value = request.form.get(setting_key, current_settings.get(setting_key, "")).strip()
-                builtin_color_updates.append((setting_key, color_value))
-            custom_color_updates = []
-            for role in active_custom_roles():
-                field_name = f"custom_role_color_{role['role_key']}"
-                color_value = request.form.get(field_name, role["color"]).strip()
-                custom_color_updates.append((role["role_key"], color_value))
-
-            numeric_values = [
-                highlight_seconds,
-                refresh_seconds,
-                general_container_width,
-                general_main_min_height,
-                general_dashboard_shell_width,
-                dashboard_general_min_height,
-                overview_general_width,
-                overview_general_min_height,
-                dashboard_category_min_width,
-                dashboard_category_min_height,
-                overview_category_width,
-                overview_category_min_height,
-                dashboard_task_width,
-                dashboard_task_min_height,
-                overview_task_width,
-                overview_task_min_height,
-            ]
-            if any(value is None for value in numeric_values):
+            if highlight_seconds is None or refresh_seconds is None:
                 flash("Mindestens ein Zahlenwert ist ungültig oder außerhalb des erlaubten Bereichs.", "error")
                 return redirect(url_for("settings_page"))
 
-            colors = [role_color_admin] + [color for _, color in builtin_color_updates]
-            if not all(is_hex_color(color) for color in colors):
-                flash("Farben müssen im Format #RRGGBB angegeben werden.", "error")
-                return redirect(url_for("settings_page"))
-
-            if not all(is_hex_color(color) for _, color in custom_color_updates):
-                flash("Mindestens eine benutzerdefinierte Rollenfarbe ist ungültig.", "error")
-                return redirect(url_for("settings_page"))
+            new_task_tone = request.form.get("new_task_tone", "classic").strip()
 
             if new_task_tone not in TONE_OPTIONS:
                 flash("Ungültige Ton-Auswahl.", "error")
@@ -2098,32 +1915,75 @@ def settings_page():
 
             set_app_setting("new_task_highlight_seconds", str(highlight_seconds))
             set_app_setting("overview_refresh_interval_seconds", str(refresh_seconds))
-            set_app_setting("general_container_width_px", str(general_container_width))
-            set_app_setting("general_main_min_height_px", str(general_main_min_height))
-            set_app_setting("general_dashboard_shell_width_px", str(general_dashboard_shell_width))
-            set_app_setting("dashboard_general_min_height_px", str(dashboard_general_min_height))
-            set_app_setting("overview_general_width_px", str(overview_general_width))
-            set_app_setting("overview_general_min_height_px", str(overview_general_min_height))
-            set_app_setting("dashboard_category_min_width_px", str(dashboard_category_min_width))
-            set_app_setting("dashboard_category_min_height_px", str(dashboard_category_min_height))
-            set_app_setting("overview_category_width_px", str(overview_category_width))
-            set_app_setting("overview_category_min_height_px", str(overview_category_min_height))
-            set_app_setting("dashboard_task_width_px", str(dashboard_task_width))
-            set_app_setting("dashboard_task_min_height_px", str(dashboard_task_min_height))
-            set_app_setting("overview_task_width_px", str(overview_task_width))
-            set_app_setting("overview_task_min_height_px", str(overview_task_min_height))
-            set_app_setting("role_color_admin", role_color_admin)
-            for setting_key, color_value in builtin_color_updates:
-                set_app_setting(setting_key, color_value)
             set_app_setting("new_task_tone", new_task_tone)
 
-            for role_key, color_value in custom_color_updates:
-                execute(
-                    "UPDATE custom_roles SET color = ? WHERE role_key = ?",
-                    (color_value, role_key),
-                )
+            flash("Einstellungen wurden gespeichert.", "success")
+            return redirect(url_for("settings_page"))
 
-            flash("Admin-Einstellungen wurden gespeichert.", "success")
+        if action == "create-category":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Kategorien erstellen.", "error")
+                return redirect(url_for("settings_page"))
+
+            category_label_input = request.form.get("category_label", "").strip()
+            if not category_label_input:
+                flash("Bitte einen Kategorienamen angeben.", "error")
+                return redirect(url_for("settings_page"))
+
+            category_key = normalize_category_key(category_label_input)
+            if not category_key:
+                flash("Kategoriename ist ungültig.", "error")
+                return redirect(url_for("settings_page"))
+
+            existing_key = query_one(
+                "SELECT category_key FROM ticket_categories WHERE category_key = ?", (category_key,)
+            )
+            existing_label = query_one(
+                "SELECT category_key FROM ticket_categories WHERE lower(label) = lower(?)",
+                (category_label_input,),
+            )
+            if existing_key is not None or existing_label is not None:
+                flash("Diese Kategorie existiert bereits.", "error")
+                return redirect(url_for("settings_page"))
+
+            execute(
+                "INSERT INTO ticket_categories (category_key, label, created_at) VALUES (?, ?, ?)",
+                (category_key, category_label_input, now_iso()),
+            )
+            g.pop("ticket_categories", None)
+            flash("Kategorie wurde erstellt.", "success")
+            return redirect(url_for("settings_page"))
+
+        if action == "delete-category":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Kategorien löschen.", "error")
+                return redirect(url_for("settings_page"))
+
+            category_key = request.form.get("category_key", "").strip().lower()
+            if not category_key:
+                flash("Ungültige Kategorie.", "error")
+                return redirect(url_for("settings_page"))
+
+            existing = query_one(
+                "SELECT category_key FROM ticket_categories WHERE category_key = ?", (category_key,)
+            )
+            if existing is None:
+                flash("Kategorie nicht gefunden.", "error")
+                return redirect(url_for("settings_page"))
+
+            usage = query_one(
+                "SELECT COUNT(*) AS cnt FROM tasks WHERE ticket_category = ?", (category_key,)
+            )
+            if usage is not None and int(usage["cnt"]) > 0:
+                flash(
+                    "Kategorie kann nicht gelöscht werden, solange Tasks dieser Kategorie zugewiesen sind.",
+                    "error",
+                )
+                return redirect(url_for("settings_page"))
+
+            execute("DELETE FROM ticket_categories WHERE category_key = ?", (category_key,))
+            g.pop("ticket_categories", None)
+            flash("Kategorie wurde entfernt.", "success")
             return redirect(url_for("settings_page"))
 
         flash("Unbekannte Aktion.", "error")
@@ -2134,63 +1994,73 @@ def settings_page():
         user=user,
         settings=app_settings(),
         custom_roles=active_custom_roles(),
-        builtin_role_color_fields=builtin_role_color_fields(app_settings()),
+        ticket_categories=get_ticket_categories(),
         tone_options=sorted(TONE_OPTIONS.keys()),
         show_sidebar=False,
     )
 
 
-@app.route("/tasks/create", methods=["POST"])
-@login_required
-def create_task():
-    user = current_user()
+def parse_task_form(form) -> tuple[dict | None, str | None]:
+    title = form.get("title", "").strip()
+    description = form.get("description", "").strip()
+    due_date = form.get("due_date", "").strip()
+    due_time = form.get("due_time", "").strip()
+    priority_raw = form.get("priority", str(DEFAULT_TASK_PRIORITY)).strip()
+    ticket_category = normalize_ticket_category(form.get("ticket_category", ""))
+    room = form.get("room", "").strip()
+    contact_person_user_id_raw = form.get("contact_person_user_id", "").strip()
+    assignee_ids_raw = form.getlist("assignee_ids")
 
-    title = request.form.get("title", "").strip()
-    description = request.form.get("description", "").strip()
-    contact_person_user_id_raw = request.form.get("contact_person_user_id", "").strip()
-    ticket_category = normalize_ticket_category(request.form.get("ticket_category", ""))
-    room = request.form.get("room", "").strip()
-    due_date = request.form.get("due_date", "").strip()
-    due_time = request.form.get("due_time", "").strip()
-    priority_raw = request.form.get("priority", str(DEFAULT_TASK_PRIORITY)).strip()
-    assignee_ids_raw = request.form.getlist("assignee_ids")
+    if not title or not description:
+        return None, "Bitte alle Pflichtfelder ausfüllen."
 
-    if not title or not description or not due_date:
-        flash("Bitte alle Pflichtfelder ausfüllen.", "error")
-        return redirect(url_for("dashboard"))
+    if len(title) > MAX_TASK_TITLE_LENGTH:
+        return None, f"Titel darf maximal {MAX_TASK_TITLE_LENGTH} Zeichen lang sein."
+
+    if len(description) > MAX_TASK_DESCRIPTION_LENGTH:
+        return None, f"Beschreibung darf maximal {MAX_TASK_DESCRIPTION_LENGTH} Zeichen lang sein."
+
+    if room and len(room) > MAX_TASK_ROOM_LENGTH:
+        return None, f"Raum darf maximal {MAX_TASK_ROOM_LENGTH} Zeichen lang sein."
 
     if not ticket_category:
-        flash("Bitte eine gültige Ticket-Kategorie auswählen.", "error")
-        return redirect(url_for("dashboard"))
+        return None, "Bitte eine gültige Ticket-Kategorie auswählen."
 
     try:
         priority = int(priority_raw)
     except ValueError:
-        flash("Bitte eine gültige Priorität (1-5) auswählen.", "error")
-        return redirect(url_for("dashboard"))
+        return None, "Bitte eine gültige Priorität (1-5) auswählen."
 
     if priority < MIN_TASK_PRIORITY or priority > MAX_TASK_PRIORITY:
-        flash("Bitte eine gültige Priorität (1-5) auswählen.", "error")
-        return redirect(url_for("dashboard"))
+        return None, "Bitte eine gültige Priorität (1-5) auswählen."
 
-    try:
-        contact_person_user_id = int(contact_person_user_id_raw)
-    except ValueError:
-        flash("Bitte einen gültigen Ansprechpartner auswählen.", "error")
-        return redirect(url_for("dashboard"))
+    if contact_person_user_id_raw == "other":
+        custom_name = form.get("contact_person_custom", "").strip()
+        if not custom_name:
+            return None, "Bitte einen Namen für den Ansprechpartner eingeben."
+        if len(custom_name) > 100:
+            return None, "Name des Ansprechpartners darf maximal 100 Zeichen lang sein."
+        contact_person_user_id = None
+        contact_user = {"id": None, "username": custom_name}
+    else:
+        try:
+            contact_person_user_id = int(contact_person_user_id_raw)
+        except ValueError:
+            return None, "Bitte einen gültigen Ansprechpartner auswählen."
 
-    contact_user = query_one(
-        "SELECT id, username FROM users WHERE id = ? AND COALESCE(is_dashboard_invisible, 0) = 0",
-        (contact_person_user_id,),
-    )
-    if contact_user is None:
-        flash("Ansprechpartner nicht gefunden.", "error")
-        return redirect(url_for("dashboard"))
+        contact_user = query_one(
+            "SELECT id, username FROM users WHERE id = ? AND COALESCE(is_dashboard_invisible, 0) = 0",
+            (contact_person_user_id,),
+        )
+        if contact_user is None:
+            return None, "Ansprechpartner nicht gefunden."
 
-    normalized_due_date = normalize_due_date_value(due_date, due_time)
-    if not normalized_due_date:
-        flash("Ungültiges Fälligkeitsdatum.", "error")
-        return redirect(url_for("dashboard"))
+    if due_date:
+        normalized_due_date = normalize_due_date_value(due_date, due_time)
+        if not normalized_due_date:
+            return None, "Ungültiges Fälligkeitsdatum."
+    else:
+        normalized_due_date = None
 
     assignee_ids = []
     for raw_id in assignee_ids_raw:
@@ -2199,8 +2069,7 @@ def create_task():
             try:
                 assignee_ids.append(int(cleaned))
             except ValueError:
-                flash("Ungültiger Bearbeiter ausgewählt.", "error")
-                return redirect(url_for("dashboard"))
+                return None, "Ungültiger Bearbeiter ausgewählt."
 
     assignee_ids = sorted(set(assignee_ids))
     if assignee_ids:
@@ -2210,8 +2079,40 @@ def create_task():
             tuple(assignee_ids),
         )
         if len(found) != len(assignee_ids):
-            flash("Mindestens ein ausgewählter Bearbeiter existiert nicht.", "error")
-            return redirect(url_for("dashboard"))
+            return None, "Mindestens ein ausgewählter Bearbeiter existiert nicht."
+
+    return {
+        "title": title,
+        "description": description,
+        "due_date": normalized_due_date,
+        "priority": priority,
+        "ticket_category": ticket_category,
+        "room": room,
+        "contact_person_user_id": contact_person_user_id,
+        "contact_user": contact_user,
+        "assignee_ids": assignee_ids,
+    }, None
+
+
+@app.route("/tasks/create", methods=["POST"])
+@login_required
+def create_task():
+    user = current_user()
+
+    parsed, error = parse_task_form(request.form)
+    if error:
+        flash(error, "error")
+        return redirect(url_for("dashboard"))
+
+    title = parsed["title"]
+    description = parsed["description"]
+    priority = parsed["priority"]
+    ticket_category = parsed["ticket_category"]
+    room = parsed["room"]
+    contact_person_user_id = parsed["contact_person_user_id"]
+    contact_user = parsed["contact_user"]
+    normalized_due_date = parsed["due_date"]
+    assignee_ids = parsed["assignee_ids"]
 
     now = now_iso()
     cur = execute(
@@ -2763,73 +2664,20 @@ def edit_task(task_id: int):
         flash("Nur Ersteller oder Admin dürfen diese Task bearbeiten.", "error")
         return redirect(url_for("task_detail", task_id=task_id))
 
-    title = request.form.get("title", "").strip()
-    description = request.form.get("description", "").strip()
-    due_date = request.form.get("due_date", "").strip()
-    due_time = request.form.get("due_time", "").strip()
-    priority_raw = request.form.get("priority", str(DEFAULT_TASK_PRIORITY)).strip()
-    ticket_category = normalize_ticket_category(request.form.get("ticket_category", ""))
-    room = request.form.get("room", "").strip()
-    contact_person_user_id_raw = request.form.get("contact_person_user_id", "").strip()
-    assignee_ids_raw = request.form.getlist("assignee_ids")
-
-    if not title or not description or not due_date:
-        flash("Titel, Beschreibung und Fälligkeitsdatum sind erforderlich.", "error")
+    parsed, error = parse_task_form(request.form)
+    if error:
+        flash(error, "error")
         return redirect(url_for("task_detail", task_id=task_id))
 
-    if not ticket_category:
-        flash("Bitte eine gültige Ticket-Kategorie auswählen.", "error")
-        return redirect(url_for("task_detail", task_id=task_id))
-
-    try:
-        priority = int(priority_raw)
-    except ValueError:
-        flash("Bitte eine gültige Priorität (1-5) auswählen.", "error")
-        return redirect(url_for("task_detail", task_id=task_id))
-
-    if priority < MIN_TASK_PRIORITY or priority > MAX_TASK_PRIORITY:
-        flash("Bitte eine gültige Priorität (1-5) auswählen.", "error")
-        return redirect(url_for("task_detail", task_id=task_id))
-
-    try:
-        contact_person_user_id = int(contact_person_user_id_raw)
-    except ValueError:
-        flash("Bitte einen gültigen Ansprechpartner auswählen.", "error")
-        return redirect(url_for("task_detail", task_id=task_id))
-
-    contact_user = query_one(
-        "SELECT id, username FROM users WHERE id = ? AND COALESCE(is_dashboard_invisible, 0) = 0",
-        (contact_person_user_id,),
-    )
-    if contact_user is None:
-        flash("Ansprechpartner nicht gefunden.", "error")
-        return redirect(url_for("task_detail", task_id=task_id))
-
-    normalized_due_date = normalize_due_date_value(due_date, due_time)
-    if not normalized_due_date:
-        flash("Ungültiges Fälligkeitsdatum.", "error")
-        return redirect(url_for("task_detail", task_id=task_id))
-
-    assignee_ids = []
-    for raw_id in assignee_ids_raw:
-        cleaned = raw_id.strip()
-        if cleaned:
-            try:
-                assignee_ids.append(int(cleaned))
-            except ValueError:
-                flash("Ungültiger Bearbeiter ausgewählt.", "error")
-                return redirect(url_for("task_detail", task_id=task_id))
-
-    assignee_ids = sorted(set(assignee_ids))
-    if assignee_ids:
-        placeholders = ",".join(["?"] * len(assignee_ids))
-        found = query_all(
-            f"SELECT id FROM users WHERE id IN ({placeholders}) AND COALESCE(is_dashboard_invisible, 0) = 0",
-            tuple(assignee_ids),
-        )
-        if len(found) != len(assignee_ids):
-            flash("Mindestens ein ausgewählter Bearbeiter existiert nicht.", "error")
-            return redirect(url_for("task_detail", task_id=task_id))
+    title = parsed["title"]
+    description = parsed["description"]
+    priority = parsed["priority"]
+    ticket_category = parsed["ticket_category"]
+    room = parsed["room"]
+    contact_person_user_id = parsed["contact_person_user_id"]
+    contact_user = parsed["contact_user"]
+    normalized_due_date = parsed["due_date"]
+    assignee_ids = parsed["assignee_ids"]
 
     execute(
         """
@@ -2933,8 +2781,14 @@ def manage_users():
 
         if action == "create-role":
             role_label_input = request.form.get("role_label", "").strip()
+            role_color = request.form.get("role_color", "#64748b").strip()
+
             if not role_label_input:
                 flash("Bitte einen Rollennamen angeben.", "error")
+                return redirect(url_for("manage_users"))
+
+            if not is_hex_color(role_color):
+                flash("Farbe muss im Format #RRGGBB angegeben werden.", "error")
                 return redirect(url_for("manage_users"))
 
             role_key = normalize_custom_role_key(role_label_input)
@@ -2942,7 +2796,7 @@ def manage_users():
                 flash("Rollenname ist ungültig.", "error")
                 return redirect(url_for("manage_users"))
 
-            if role_key in {"admin", ROLE_TEAM, ROLE_SYSTEM_INTEGRATOR, ROLE_APPLICATION_DEVELOPER}:
+            if role_key == "admin":
                 flash("Diese Rolle ist bereits reserviert.", "error")
                 return redirect(url_for("manage_users"))
 
@@ -2956,13 +2810,37 @@ def manage_users():
                 return redirect(url_for("manage_users"))
 
             execute(
-                """
-                INSERT INTO custom_roles (role_key, label, color, created_at)
-                VALUES (?, ?, ?, ?)
-                """,
-                (role_key, role_label_input, "#64748b", now_iso()),
+                "INSERT INTO custom_roles (role_key, label, color, created_at) VALUES (?, ?, ?, ?)",
+                (role_key, role_label_input, role_color, now_iso()),
             )
-            flash("Rolle wurde erstellt. Farbe kann in Einstellungen angepasst werden.", "success")
+            flash("Rolle wurde erstellt.", "success")
+            return redirect(url_for("manage_users"))
+
+        if action == "update-role":
+            role_key = request.form.get("role_key", "").strip().lower()
+            role_color = request.form.get("role_color", "").strip()
+
+            if not role_key:
+                flash("Ungültige Rolle.", "error")
+                return redirect(url_for("manage_users"))
+
+            if not is_hex_color(role_color):
+                flash("Farbe muss im Format #RRGGBB angegeben werden.", "error")
+                return redirect(url_for("manage_users"))
+
+            if role_key == "admin":
+                set_app_setting("role_color_admin", role_color)
+                flash("Admin-Rollenfarbe wurde aktualisiert.", "success")
+                return redirect(url_for("manage_users"))
+
+            existing = query_one("SELECT role_key FROM custom_roles WHERE role_key = ?", (role_key,))
+            if existing is None:
+                flash("Rolle nicht gefunden.", "error")
+                return redirect(url_for("manage_users"))
+
+            execute("UPDATE custom_roles SET color = ? WHERE role_key = ?", (role_color, role_key))
+            g.pop("custom_roles_map", None)
+            flash("Rollenfarbe wurde aktualisiert.", "success")
             return redirect(url_for("manage_users"))
 
         if action == "delete-role":
@@ -2971,25 +2849,17 @@ def manage_users():
                 flash("Ungültige Rolle.", "error")
                 return redirect(url_for("manage_users"))
 
-            is_builtin = role_key in BUILTIN_ROLE_CONFIG
-            if not is_builtin:
-                existing = query_one("SELECT role_key, label FROM custom_roles WHERE role_key = ?", (role_key,))
-                if existing is None:
-                    flash("Rolle nicht gefunden.", "error")
-                    return redirect(url_for("manage_users"))
+            existing = query_one("SELECT role_key, label FROM custom_roles WHERE role_key = ?", (role_key,))
+            if existing is None:
+                flash("Rolle nicht gefunden.", "error")
+                return redirect(url_for("manage_users"))
 
             usage = query_one("SELECT COUNT(*) AS cnt FROM users WHERE role = ?", (role_key,))
             if usage is not None and int(usage["cnt"]) > 0:
                 flash("Rolle kann nicht gelöscht werden, solange Benutzer dieser Rolle zugewiesen sind.", "error")
                 return redirect(url_for("manage_users"))
 
-            if is_builtin:
-                execute(
-                    "INSERT OR IGNORE INTO disabled_roles (role_key, created_at) VALUES (?, ?)",
-                    (role_key, now_iso()),
-                )
-            else:
-                execute("DELETE FROM custom_roles WHERE role_key = ?", (role_key,))
+            execute("DELETE FROM custom_roles WHERE role_key = ?", (role_key,))
             flash("Rolle wurde entfernt.", "success")
             return redirect(url_for("manage_users"))
 
@@ -3174,15 +3044,8 @@ def manage_users():
             is_inactive ASC,
             CASE member_type WHEN 'trainee' THEN 0 ELSE 1 END ASC,
             is_admin DESC,
-            CASE role
-                WHEN ? THEN 0
-                WHEN ? THEN 1
-                WHEN ? THEN 2
-                ELSE 3
-            END,
             username ASC
-        """,
-        (ROLE_TEAM, ROLE_SYSTEM_INTEGRATOR, ROLE_APPLICATION_DEVELOPER),
+        """
     )
 
     enriched_users = []
@@ -3199,8 +3062,8 @@ def manage_users():
         users=enriched_users,
         user=current_user(),
         role_options=role_options(),
-        custom_roles=active_custom_roles(),
         role_management_entries=role_management_entries(),
+        admin_color=app_settings().get("role_color_admin", "#facc15"),
         show_sidebar=False,
     )
 
@@ -3249,6 +3112,10 @@ def admin_closed_tasks():
         user=current_user(),
         show_sidebar=False,
     )
+
+
+with app.app_context():
+    init_db()
 
 
 if __name__ == "__main__":

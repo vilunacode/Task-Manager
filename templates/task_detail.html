@@ -81,13 +81,17 @@
       </select>
     </label>
     <label class="field-compact">Ansprechpartner
-      <select name="contact_person_user_id" required>
+      <select name="contact_person_user_id" required onchange="toggleCustomContact(this)">
         {% for person in users %}
         <option value="{{ person['id'] }}" {{ 'selected' if task['contact_person_user_id'] and person['id'] == task['contact_person_user_id'] else '' }}>
           {{ person['initials'] }} - {{ person['username'] }}
         </option>
         {% endfor %}
+        <option value="other" {{ 'selected' if not task['contact_person_user_id'] and task.get('contact_person') else '' }}>Andere...</option>
       </select>
+    </label>
+    <label class="field-compact contact-custom-label" style="{{ '' if (not task['contact_person_user_id'] and task.get('contact_person')) else 'display:none' }}">Anderer Ansprechpartner
+      <input type="text" name="contact_person_custom" maxlength="100" value="{{ task.get('contact_person', '') if not task['contact_person_user_id'] else '' }}" placeholder="Name eingeben">
     </label>
     <label class="field-compact">Kategorie
       <select name="ticket_category" required>
@@ -114,8 +118,8 @@
     <label class="full">Beschreibung
       <textarea name="description" rows="4" required>{{ task['description'] }}</textarea>
     </label>
-    <label>Fällig am
-      <input type="date" name="due_date" value="{{ due_date_input_value(task['due_date']) }}" required>
+    <label>Fällig am (optional)
+      <input type="date" name="due_date" value="{{ due_date_input_value(task['due_date']) }}">
     </label>
     <label>Uhrzeit (optional)
       <input type="time" name="due_time" value="{{ due_time_input_value(task['due_date']) }}">
@@ -225,6 +229,22 @@
     {% endif %}
   </div>
 </section>
+<script>
+  function toggleCustomContact(select) {
+    const form = select.closest("form");
+    const label = form ? form.querySelector(".contact-custom-label") : null;
+    if (!label) return;
+    const input = label.querySelector("input");
+    if (select.value === "other") {
+      label.style.display = "";
+      input.required = true;
+    } else {
+      label.style.display = "none";
+      input.required = false;
+      input.value = "";
+    }
+  }
+</script>
 <script>
   (() => {
     const commentInput = document.getElementById("comment-content");

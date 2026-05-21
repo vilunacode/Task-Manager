@@ -7,24 +7,8 @@
   <style>
     :root {
       --role-admin-color: {{ app_settings['role_color_admin'] if app_settings else '#facc15' }};
-      --role-system-color: {{ app_settings['role_color_system'] if app_settings else '#dc2626' }};
-      --role-dev-color: {{ app_settings['role_color_dev'] if app_settings else '#2563eb' }};
-      --role-team-color: {{ app_settings['role_color_team'] if app_settings else '#0f766e' }};
-      --general-container-width: {{ app_settings['general_container_width_px'] if app_settings else '1760' }}px;
-      --general-main-min-height: {{ app_settings['general_main_min_height_px'] if app_settings else '0' }}px;
-      --general-dashboard-shell-width: {{ app_settings['general_dashboard_shell_width_px'] if app_settings else '1080' }}px;
-      --dashboard-general-min-height: {{ app_settings['dashboard_general_min_height_px'] if app_settings else '0' }}px;
-      --overview-general-width: {{ app_settings['overview_general_width_px'] if app_settings else '1720' }}px;
-      --overview-general-min-height: {{ app_settings['overview_general_min_height_px'] if app_settings else '0' }}px;
-      --dashboard-category-width: {{ app_settings['dashboard_category_min_width_px'] if app_settings else '320' }}px;
-      --dashboard-category-min-height: {{ app_settings['dashboard_category_min_height_px'] if app_settings else '0' }}px;
-      --overview-category-width: {{ '100%' if app_settings and app_settings['overview_category_width_px'] == '0' else ((app_settings['overview_category_width_px'] if app_settings else '100') ~ 'px') }};
-      --overview-category-min-height: {{ app_settings['overview_category_min_height_px'] if app_settings else '0' }}px;
-      --dashboard-task-card-width: {{ app_settings['dashboard_task_width_px'] if app_settings else '360' }}px;
-      --dashboard-task-card-min-height: {{ app_settings['dashboard_task_min_height_px'] if app_settings else '0' }}px;
-      --overview-task-card-width: {{ app_settings['overview_task_width_px'] if app_settings else '220' }}px;
-      --overview-task-card-min-height: {{ app_settings['overview_task_min_height_px'] if app_settings else '94' }}px;
     }
+    .badge-admin { background: var(--role-admin-color); }
     {% for rule in custom_role_css_rules %}
     .{{ rule['class_name'] }} {
       background: {{ rule['color'] }};

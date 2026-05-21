@@ -133,6 +133,23 @@
   {% endfor %}
 </section>
 
+<dialog id="no-category-dialog" class="task-dialog">
+  <div class="task-edit-form">
+    <div class="dialog-head full">
+      <h2>Keine Kategorie vorhanden</h2>
+      <button type="button" class="link-btn" onclick="document.getElementById('no-category-dialog').close()">Schließen</button>
+    </div>
+    {% if user['is_admin'] %}
+    <p>Es wurde noch keine Ticket-Kategorie angelegt. Bitte lege zuerst mindestens eine Kategorie in den <a href="{{ url_for('settings_page') }}">Einstellungen</a> an.</p>
+    {% else %}
+    <p>Es wurde noch keine Ticket-Kategorie angelegt. Bitte wende dich an einen Administrator.</p>
+    {% endif %}
+    <div class="actions-row">
+      <button type="button" class="secondary" onclick="document.getElementById('no-category-dialog').close()">OK</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="create-task-dialog" class="task-dialog">
   <form method="post" action="{{ url_for('create_task') }}" class="form-grid two-columns task-edit-form">
     <div class="dialog-head full">
@@ -173,19 +190,23 @@
     <label class="field-compact">Raum (optional)
       <input type="text" name="room" maxlength="120" placeholder="z.B. BE.45">
     </label>
-    <label>Fällig am
-      <input type="date" name="due_date" required>
+    <label>Fällig am (optional)
+      <input type="date" name="due_date">
     </label>
     <label>Uhrzeit (optional)
       <input type="time" name="due_time">
     </label>
     <label class="field-compact">Ansprechpartner
-      <select name="contact_person_user_id" required>
+      <select name="contact_person_user_id" required onchange="toggleCustomContact(this)">
         <option value="" selected disabled>Bitte wählen</option>
         {% for person in users %}
         <option value="{{ person['id'] }}">{{ person['initials'] }} - {{ person['username'] }}</option>
         {% endfor %}
+        <option value="other">Andere...</option>
       </select>
+    </label>
+    <label class="field-compact contact-custom-label" style="display:none">Anderer Ansprechpartner
+      <input type="text" name="contact_person_custom" maxlength="100" placeholder="Name eingeben">
     </label>
     <div class="actions-row">
       <button type="submit">Task anlegen</button>
@@ -209,6 +230,22 @@
   </form>
 </dialog>
 
+<script>
+  function toggleCustomContact(select) {
+    const form = select.closest("form");
+    const label = form ? form.querySelector(".contact-custom-label") : null;
+    if (!label) return;
+    const input = label.querySelector("input");
+    if (select.value === "other") {
+      label.style.display = "";
+      input.required = true;
+    } else {
+      label.style.display = "none";
+      input.required = false;
+      input.value = "";
+    }
+  }
+</script>
 <script>
   (() => {
     const dialog = document.getElementById("create-task-dialog");
@@ -488,7 +525,14 @@
       renderCardInner(card, task);
     };
 
-    openBtn.addEventListener("click", () => dialog.showModal());
+    const hasCategories = {{ 'true' if ticket_category_options else 'false' }};
+    openBtn.addEventListener("click", () => {
+      if (!hasCategories) {
+        document.getElementById("no-category-dialog").showModal();
+      } else {
+        dialog.showModal();
+      }
+    });
     closeBtn.addEventListener("click", () => dialog.close());
     closeTaskDialogAbort.addEventListener("click", () => {
       pendingCloseTaskId = null;
