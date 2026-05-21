@@ -247,6 +247,8 @@ def get_db() -> sqlite3.Connection:
             "Bitte 'database.driver = sqlite' nutzen."
         )
     if "db" not in g:
+        db_dir = os.path.dirname(os.path.abspath(DATABASE))
+        os.makedirs(db_dir, exist_ok=True)
         conn = sqlite3.connect(DATABASE)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
@@ -259,6 +261,15 @@ def close_db(exception):  # pylint: disable=unused-argument
     db = g.pop("db", None)
     if db is not None:
         db.close()
+
+
+@app.before_request
+def auto_reinit_db_if_missing():
+    db = get_db()
+    if db.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+    ).fetchone() is None:
+        init_db()
 
 
 def init_db() -> None:
@@ -363,6 +374,18 @@ def init_db() -> None:
             created_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS activity_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor_id INTEGER,
+            actor_name TEXT NOT NULL,
+            event_type TEXT NOT NULL,
+            description TEXT NOT NULL,
+            task_id INTEGER,
+            task_title TEXT,
+            details TEXT,
+            created_at TEXT NOT NULL
+        );
+
         CREATE INDEX IF NOT EXISTS idx_task_assignees_user ON task_assignees(user_id);
         CREATE INDEX IF NOT EXISTS idx_task_assignees_task ON task_assignees(task_id);
         CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);
@@ -370,6 +393,7 @@ def init_db() -> None:
         CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at);
         CREATE INDEX IF NOT EXISTS idx_user_ping_reads_user ON user_ping_reads(user_id);
         CREATE INDEX IF NOT EXISTS idx_calendar_events_user ON calendar_events(user_id);
+        CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at DESC);
         """
     )
 
@@ -411,6 +435,8 @@ def init_db() -> None:
         db.execute("ALTER TABLE tasks ADD COLUMN room TEXT")
     if "priority" not in task_columns:
         db.execute(f"ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT {DEFAULT_TASK_PRIORITY}")
+    if "is_archived" not in task_columns:
+        db.execute("ALTER TABLE tasks ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
 
     comment_columns = {row["name"] for row in db.execute("PRAGMA table_info(task_comments)").fetchall()}
     if "updated_at" not in comment_columns:
@@ -558,6 +584,33 @@ def execute_many(query: str, params_list) -> None:
     db = get_db()
     db.executemany(query, params_list)
     db.commit()
+
+
+def log_event(
+    actor,
+    event_type: str,
+    description: str,
+    task_id: int | None = None,
+    task_title: str | None = None,
+    details: str | None = None,
+) -> None:
+    actor_name = actor["username"] if actor else "System"
+    actor_id = int(actor["id"]) if actor else None
+    execute(
+        """
+        INSERT INTO activity_log (actor_id, actor_name, event_type, description, task_id, task_title, details, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (actor_id, actor_name, event_type, description, task_id, task_title, details, now_iso()),
+    )
+
+
+LOG_RETENTION_DAYS = 7
+
+
+def cleanup_old_log_entries() -> None:
+    cutoff = (datetime.now().astimezone().replace(microsecond=0) - timedelta(days=LOG_RETENTION_DAYS)).isoformat()
+    execute("DELETE FROM activity_log WHERE created_at < ?", (cutoff,))
 
 
 def app_settings() -> dict[str, str]:
@@ -966,9 +1019,14 @@ def sidebar_users():
     ]
 
 
-def fetch_tasks(*, status: str | None = None, only_assigned_to: int | None = None):
+def fetch_tasks(*, status: str | None = None, only_assigned_to: int | None = None, archived_only: bool = False):
     where_parts = []
     params = []
+
+    if archived_only:
+        where_parts.append("COALESCE(t.is_archived, 0) = 1")
+    else:
+        where_parts.append("COALESCE(t.is_archived, 0) = 0")
 
     if status is not None:
         where_parts.append("t.status = ?")
@@ -1068,7 +1126,11 @@ def build_month_cells(month_start: date, events: list[dict]):
         )
 
     return {
-        "month_label": month_start.strftime("%B %Y"),
+        "month_label": (
+            ["Januar","Februar","März","April","Mai","Juni",
+             "Juli","August","September","Oktober","November","Dezember"]
+            [month_start.month - 1]
+        ) + f" {month_start.year}",
         "month_value": month_start.strftime("%Y-%m"),
         "prev_month": shift_month(month_start, -1).strftime("%Y-%m"),
         "next_month": shift_month(month_start, 1).strftime("%Y-%m"),
@@ -1176,6 +1238,7 @@ def calendar_task_events(user_ids: list[int]):
         LEFT JOIN task_assignees ta ON ta.task_id = t.id
         LEFT JOIN users au ON au.id = ta.user_id
         WHERE t.due_date IS NOT NULL AND TRIM(t.due_date) != ''
+          AND COALESCE(t.is_archived, 0) = 0
           AND EXISTS (
             SELECT 1 FROM task_assignees ta2
             WHERE ta2.task_id = t.id AND ta2.user_id IN ({placeholders})
@@ -1244,7 +1307,8 @@ def ping_comment_map_for_user(user) -> dict[int, int]:
         SELECT tc.id AS comment_id, tc.task_id
         FROM task_comment_mentions tcm
         JOIN task_comments tc ON tc.id = tcm.comment_id
-        WHERE tcm.user_id = ?
+        JOIN tasks t ON t.id = tc.task_id
+        WHERE tcm.user_id = ? AND COALESCE(t.is_archived, 0) = 0
         """,
         (user_id,),
     )
@@ -1260,9 +1324,10 @@ def ping_comment_map_for_user(user) -> dict[int, int]:
     )
     legacy_rows = query_all(
         """
-        SELECT id AS comment_id, task_id, content
-        FROM task_comments
-        WHERE content LIKE '%@%'
+        SELECT tc.id AS comment_id, tc.task_id, tc.content
+        FROM task_comments tc
+        JOIN tasks t ON t.id = tc.task_id
+        WHERE tc.content LIKE '%@%' AND COALESCE(t.is_archived, 0) = 0
         """
     )
     for row in legacy_rows:
@@ -1441,7 +1506,10 @@ def status_label(status: str) -> str:
 def closed_task_count_for_admin(user) -> int:
     if user is None or not user["is_admin"]:
         return 0
-    row = query_one("SELECT COUNT(*) AS cnt FROM tasks WHERE status = ?", (STATUS_CLOSED,))
+    row = query_one(
+        "SELECT COUNT(*) AS cnt FROM tasks WHERE status = ? AND COALESCE(is_archived, 0) = 0",
+        (STATUS_CLOSED,),
+    )
     return int(row["cnt"]) if row is not None else 0
 
 
@@ -1521,10 +1589,149 @@ def setup():
             ),
         )
 
-        flash("Administrator wurde erstellt. Bitte anmelden.", "success")
-        return redirect(url_for("login"))
+        new_user = query_one("SELECT id FROM users WHERE username = ?", (username,))
+        if new_user:
+            session.clear()
+            session["user_id"] = new_user["id"]
+
+        return redirect(url_for("onboarding"))
 
     return render_template("setup.html")
+
+
+@app.route("/onboarding", methods=["GET", "POST"])
+def onboarding():
+    user = current_user()
+    if user is None:
+        return redirect(url_for("login"))
+    if not user["is_admin"]:
+        return redirect(url_for("dashboard"))
+
+    if request.method == "POST":
+        action = request.form.get("action", "")
+        active_tab = request.form.get("active_tab", "rollen")
+
+        if action == "create-role":
+            role_label_input = request.form.get("role_label", "").strip()
+            role_color = request.form.get("role_color", "#64748b").strip()
+
+            if not role_label_input:
+                flash("Bitte einen Rollennamen angeben.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            if not is_hex_color(role_color):
+                flash("Farbe muss im Format #RRGGBB angegeben werden.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            role_key = normalize_custom_role_key(role_label_input)
+            if not role_key or role_key == "admin":
+                flash("Rollenname ist ungültig.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            existing = query_one(
+                "SELECT role_key FROM custom_roles WHERE role_key = ? OR lower(label) = lower(?)",
+                (role_key, role_label_input),
+            )
+            if existing is not None:
+                flash("Diese Rolle existiert bereits.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            execute(
+                "INSERT INTO custom_roles (role_key, label, color, created_at) VALUES (?, ?, ?, ?)",
+                (role_key, role_label_input, role_color, now_iso()),
+            )
+            flash(f"Rolle \"{role_label_input}\" wurde erstellt.", "success")
+            return redirect(url_for("onboarding", tab=active_tab))
+
+        if action == "create-user":
+            username = request.form.get("username", "").strip()
+            password = request.form.get("password", "").strip()
+            initials = normalize_initials(request.form.get("initials", ""))
+            role_value = request.form.get("role", "").strip()
+            is_admin = 1 if role_value == "admin" else 0
+            role = "" if is_admin else normalize_role(role_value)
+
+            if not username or not password:
+                flash("Benutzername und Passwort sind erforderlich.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            if len(username) > MAX_USERNAME_LENGTH:
+                flash(f"Benutzername darf maximal {MAX_USERNAME_LENGTH} Zeichen lang sein.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            if not initials:
+                flash("Kürzel muss genau 3 Zeichen (A-Z/0-9) lang sein.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            if not is_admin and not role:
+                flash("Bitte eine gültige Rolle auswählen.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            if query_one("SELECT id FROM users WHERE username = ?", (username,)):
+                flash("Benutzername ist bereits vergeben.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            if query_one("SELECT id FROM users WHERE initials = ?", (initials,)):
+                flash("Dieses Kürzel ist bereits vergeben.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            execute(
+                """
+                INSERT INTO users (username, password_hash, is_admin, initials, role, member_type, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (username, generate_password_hash(password), is_admin, initials, role, MEMBER_TYPE_REGULAR, now_iso()),
+            )
+            flash(f"Benutzer \"{username}\" wurde angelegt.", "success")
+            return redirect(url_for("onboarding", tab=active_tab))
+
+        if action == "create-category":
+            category_label_input = request.form.get("category_label", "").strip()
+
+            if not category_label_input:
+                flash("Bitte einen Kategorienamen angeben.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            category_key = normalize_category_key(category_label_input)
+            if not category_key:
+                flash("Kategoriename ist ungültig.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            existing = query_one(
+                "SELECT category_key FROM ticket_categories WHERE category_key = ? OR lower(label) = lower(?)",
+                (category_key, category_label_input),
+            )
+            if existing is not None:
+                flash("Diese Kategorie existiert bereits.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+
+            execute(
+                "INSERT INTO ticket_categories (category_key, label, created_at) VALUES (?, ?, ?)",
+                (category_key, category_label_input, now_iso()),
+            )
+            g.pop("ticket_categories", None)
+            flash(f"Kategorie \"{category_label_input}\" wurde erstellt.", "success")
+            return redirect(url_for("onboarding", tab=active_tab))
+
+        return redirect(url_for("onboarding"))
+
+    active_tab = request.args.get("tab", "rollen")
+    roles = role_management_entries()
+    users = query_all(
+        "SELECT id, username, initials, role, is_admin FROM users ORDER BY is_admin DESC, username ASC"
+    )
+    categories = get_ticket_categories()
+    role_opts = role_options()
+
+    return render_template(
+        "onboarding.html",
+        active_tab=active_tab,
+        roles=roles,
+        users=users,
+        categories=categories,
+        role_opts=role_opts,
+        user=user,
+    )
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -1588,6 +1795,7 @@ def dashboard():
         {
             **task,
             "contact_person_badge": contact_person_badge(task),
+            "contact_person_display": (lambda cp: f"{cp['initials']} - {cp['username']}" if cp else "-")(contact_person_badge(task)),
         }
         for task in tasks
     ]
@@ -1618,7 +1826,14 @@ def dashboard():
 @login_required
 def overview():
     user = current_user()
-    tasks = enrich_tasks_with_assignees(fetch_tasks())
+    raw_tasks = enrich_tasks_with_assignees(fetch_tasks())
+    tasks = [
+        {
+            **task,
+            "contact_person_display": (lambda cp: f"{cp['initials']} - {cp['username']}" if cp else "-")(contact_person_badge(task)),
+        }
+        for task in raw_tasks
+    ]
 
     grouped = {
         STATUS_OPEN: [],
@@ -1643,6 +1858,7 @@ def overview_tasks_api():
     tasks = enrich_tasks_with_assignees(fetch_tasks())
     payload = []
     for task in tasks:
+        cp = contact_person_badge(task)
         payload.append(
             {
                 "id": task["id"],
@@ -1653,6 +1869,11 @@ def overview_tasks_api():
                 "due_date_display": format_datetime_for_display(task["due_date"]),
                 "priority": int(task.get("priority") or DEFAULT_TASK_PRIORITY),
                 "assignees": task["assignees"],
+                "description": task.get("description", "") or "",
+                "room": task.get("room", "") or "",
+                "ticket_category_label": ticket_category_label(task.get("ticket_category", "")),
+                "creator_name": task.get("creator_name", ""),
+                "contact_person_display": f"{cp['initials']} - {cp['username']}" if cp else "-",
             }
         )
     return jsonify({"tasks": payload})
@@ -1694,9 +1915,11 @@ def dashboard_tasks_api():
                 "priority": int(task.get("priority") or DEFAULT_TASK_PRIORITY),
                 "ticket_category": task.get("ticket_category", ""),
                 "ticket_category_label": ticket_category_label(task.get("ticket_category", "")),
+                "description": task.get("description", "") or "",
                 "room": task.get("room", "") or "",
                 "contact_person": task.get("contact_person", ""),
                 "contact_person_badge": contact_person_badge(task),
+                "contact_person_display": (lambda cp: f"{cp['initials']} - {cp['username']}" if cp else "-")(contact_person_badge(task)),
                 "creator_name": task.get("creator_name", ""),
                 "assignees": task["assignees"],
                 "assigned_to_me": assigned_to_me,
@@ -2158,6 +2381,7 @@ def create_task():
             (task_id, assignee_id),
         )
 
+    log_event(user, "task_created", "Task erstellt", task_id=task_id, task_title=title)
     flash("Task wurde erstellt.", "success")
     return redirect(url_for("dashboard"))
 
@@ -2353,12 +2577,22 @@ def update_task_status(task_id: int):
             """,
             (new_status, now_iso(), close_reason, now_iso(), user["id"], task_id),
         )
+        log_event(
+            user, "task_closed", "Task geschlossen",
+            task_id=task_id, task_title=task["title"],
+            details=f"Grund: {close_reason}",
+        )
         flash("Task wurde geschlossen.", "success")
         return redirect(url_for("dashboard", filter=return_filter))
 
+    _status_labels = {STATUS_OPEN: "Offen", STATUS_IN_PROGRESS: "In Bearbeitung"}
     execute(
         "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
         (new_status, now_iso(), task_id),
+    )
+    log_event(
+        user, "status_changed", f"Status geändert zu '{_status_labels.get(new_status, new_status)}'",
+        task_id=task_id, task_title=task["title"],
     )
     flash("Task-Status aktualisiert.", "success")
     return redirect(url_for("dashboard", filter=return_filter))
@@ -2411,6 +2645,84 @@ def add_task_assignee(task_id: int):
     sync_task_primary_assignee(task_id)
 
     flash("Bearbeiter wurde zur Task hinzugefügt.", "success")
+    return redirect(url_for("dashboard", filter=return_filter))
+
+
+@app.route("/tasks/<int:task_id>/assignees/self-assign", methods=["POST"])
+@login_required
+def self_assign_task(task_id: int):
+    user = current_user()
+    return_filter = request.form.get("return_filter", "all").strip().lower()
+    if return_filter not in VALID_DASHBOARD_FILTERS:
+        return_filter = "all"
+
+    task = query_one("SELECT id, status FROM tasks WHERE id = ? AND COALESCE(is_archived, 0) = 0", (task_id,))
+    if task is None or task["status"] == STATUS_CLOSED:
+        flash("Diese Task kann nicht bearbeitet werden.", "error")
+        return redirect(url_for("dashboard", filter=return_filter))
+
+    existing = query_one(
+        "SELECT 1 FROM task_assignees WHERE task_id = ? AND user_id = ?",
+        (task_id, int(user["id"])),
+    )
+    if existing is None:
+        execute(
+            "INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)",
+            (task_id, int(user["id"])),
+        )
+        sync_task_primary_assignee(task_id)
+
+    return redirect(url_for("dashboard", filter=return_filter))
+
+
+@app.route("/tasks/<int:task_id>/assignees/remove", methods=["POST"])
+@login_required
+def remove_task_assignee(task_id: int):
+    user = current_user()
+    return_filter = request.form.get("return_filter", "all").strip().lower()
+    if return_filter not in VALID_DASHBOARD_FILTERS:
+        return_filter = "all"
+
+    task = query_one("SELECT id, status FROM tasks WHERE id = ?", (task_id,))
+    if task is None:
+        flash("Task nicht gefunden.", "error")
+        return redirect(url_for("dashboard", filter=return_filter))
+
+    if not can_edit_task_content(user, task_id):
+        flash("Keine Berechtigung, Bearbeiter von dieser Task zu entfernen.", "error")
+        return redirect(url_for("dashboard", filter=return_filter))
+
+    raw_user_id = request.form.get("user_id", "").strip()
+    try:
+        assignee_user_id = int(raw_user_id)
+    except ValueError:
+        flash("Ungültiger Benutzer.", "error")
+        return redirect(url_for("dashboard", filter=return_filter))
+
+    execute(
+        "DELETE FROM task_assignees WHERE task_id = ? AND user_id = ?",
+        (task_id, assignee_user_id),
+    )
+    sync_task_primary_assignee(task_id)
+
+    flash("Bearbeiter wurde aus der Task entfernt.", "success")
+    return redirect(url_for("dashboard", filter=return_filter))
+
+
+@app.route("/tasks/<int:task_id>/assignees/self-remove", methods=["POST"])
+@login_required
+def self_remove_task(task_id: int):
+    user = current_user()
+    return_filter = request.form.get("return_filter", "all").strip().lower()
+    if return_filter not in VALID_DASHBOARD_FILTERS:
+        return_filter = "all"
+
+    execute(
+        "DELETE FROM task_assignees WHERE task_id = ? AND user_id = ?",
+        (task_id, int(user["id"])),
+    )
+    sync_task_primary_assignee(task_id)
+
     return redirect(url_for("dashboard", filter=return_filter))
 
 
@@ -2707,6 +3019,7 @@ def edit_task(task_id: int):
             (task_id, assignee_id),
         )
 
+    log_event(user, "task_edited", "Task bearbeitet", task_id=task_id, task_title=title)
     flash("Task wurde aktualisiert.", "success")
     return redirect(url_for("task_detail", task_id=task_id))
 
@@ -3068,48 +3381,91 @@ def manage_users():
     )
 
 
-@app.route("/admin/closed", methods=["GET", "POST"])
+@app.route("/admin/closed")
 @admin_required
 def admin_closed_tasks():
+    return redirect(url_for("archive", tab="closed"))
+
+
+@app.route("/archive", methods=["GET", "POST"])
+@admin_required
+def archive():
+    user = current_user()
+    tab = request.args.get("tab", "closed").strip().lower()
+    if tab not in {"closed", "archived", "log"}:
+        tab = "closed"
+
     if request.method == "POST":
         action = request.form.get("action", "").strip()
-        task_id = request.form.get("task_id", "").strip()
+        task_id_raw = request.form.get("task_id", "").strip()
+        return_tab = request.form.get("return_tab", "closed").strip().lower()
+        if return_tab not in {"closed", "archived"}:
+            return_tab = "closed"
 
-        task = query_one("SELECT * FROM tasks WHERE id = ?", (task_id,))
+        task = query_one("SELECT * FROM tasks WHERE id = ?", (task_id_raw,))
         if task is None:
             flash("Task nicht gefunden.", "error")
-            return redirect(url_for("admin_closed_tasks"))
-
-        if task["status"] != STATUS_CLOSED:
-            flash("Diese Task ist nicht geschlossen.", "error")
-            return redirect(url_for("admin_closed_tasks"))
+            return redirect(url_for("archive", tab=return_tab))
 
         if action == "reopen":
+            if task["status"] != STATUS_CLOSED:
+                flash("Diese Task ist nicht geschlossen.", "error")
+                return redirect(url_for("archive", tab="closed"))
             execute(
                 """
                 UPDATE tasks
-                SET status = ?, updated_at = ?, close_reason = NULL, closed_at = NULL, closed_by = NULL
+                SET status = ?, updated_at = ?, close_reason = NULL, closed_at = NULL, closed_by = NULL,
+                    is_archived = 0
                 WHERE id = ?
                 """,
-                (STATUS_IN_PROGRESS, now_iso(), task_id),
+                (STATUS_IN_PROGRESS, now_iso(), task_id_raw),
             )
+            log_event(user, "task_reopened", "Task zurückgesendet", task_id=int(task_id_raw), task_title=task["title"])
             flash("Task wurde ans Team zurückgesendet.", "success")
-            return redirect(url_for("admin_closed_tasks"))
+            return redirect(url_for("archive", tab="closed"))
+
+        if action == "archive_task":
+            if task["status"] != STATUS_CLOSED:
+                flash("Nur geschlossene Tasks können archiviert werden.", "error")
+                return redirect(url_for("archive", tab="closed"))
+            execute(
+                "UPDATE tasks SET is_archived = 1, updated_at = ? WHERE id = ?",
+                (now_iso(), task_id_raw),
+            )
+            log_event(user, "task_archived", "Task archiviert", task_id=int(task_id_raw), task_title=task["title"])
+            flash("Task wurde archiviert.", "success")
+            return redirect(url_for("archive", tab="closed"))
 
         if action == "delete":
-            execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+            log_event(user, "task_deleted", "Task gelöscht", task_id=int(task_id_raw), task_title=task["title"])
+            execute("DELETE FROM tasks WHERE id = ?", (task_id_raw,))
             flash("Task wurde endgültig gelöscht.", "success")
-            return redirect(url_for("admin_closed_tasks"))
+            return redirect(url_for("archive", tab=return_tab))
 
         flash("Unbekannte Aktion.", "error")
-        return redirect(url_for("admin_closed_tasks"))
+        return redirect(url_for("archive", tab=return_tab))
+
+    cleanup_old_log_entries()
 
     closed_tasks = enrich_tasks_with_assignees(fetch_tasks(status=STATUS_CLOSED))
+    archived_tasks = enrich_tasks_with_assignees(fetch_tasks(archived_only=True))
+    log_entries = query_all(
+        """
+        SELECT id, actor_name, event_type, description, task_id, task_title, details, created_at
+        FROM activity_log
+        ORDER BY created_at DESC
+        LIMIT 500
+        """
+    )
 
     return render_template(
-        "admin_closed.html",
+        "archive.html",
         tasks=closed_tasks,
-        user=current_user(),
+        archived_tasks=archived_tasks,
+        log_entries=log_entries,
+        log_retention_days=LOG_RETENTION_DAYS,
+        tab=tab,
+        user=user,
         show_sidebar=False,
     )
 

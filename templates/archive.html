@@ -1,0 +1,208 @@
+{% extends 'base.html' %}
+{% block title %}Archiv | Task Manager{% endblock %}
+{% block content %}
+<section class="card">
+  <div class="section-head" style="margin-bottom: 16px;">
+    <h1 style="margin-bottom: 0;">Archiv</h1>
+  </div>
+
+  <div class="filter-tabs" style="margin-bottom: 20px;">
+    <a href="{{ url_for('archive', tab='closed') }}" class="chip{% if tab == 'closed' %} active{% endif %}">
+      Geschlossene Tickets
+      {% if tasks %}
+      <span class="nav-count-badge" style="margin-left: 4px;">{{ tasks | length }}</span>
+      {% endif %}
+    </a>
+    <a href="{{ url_for('archive', tab='archived') }}" class="chip{% if tab == 'archived' %} active{% endif %}">
+      Archiviert
+      {% if archived_tasks %}
+      <span class="nav-count-badge" style="margin-left: 4px; background: #64748b;">{{ archived_tasks | length }}</span>
+      {% endif %}
+    </a>
+    <a href="{{ url_for('archive', tab='log') }}" class="chip{% if tab == 'log' %} active{% endif %}">Protokoll</a>
+  </div>
+
+  {% if tab == 'closed' %}
+  <div class="task-list closed-task-grid">
+    {% if tasks %}
+      {% for task in tasks %}
+      <article class="task-card">
+        <strong>{{ task['title'] }}</strong>
+        <small>Kategorie: {{ ticket_category_label(task['ticket_category']) }}</small>
+        <small>Raum: {{ task['room'] or '-' }}</small>
+        <small>Ansprechpartner: {{ task['contact_person'] }}</small>
+        <small>Erstellt am: {{ format_system_datetime(task['created_at']) }}</small>
+        <small>Fällig bis: {{ format_datetime(task['due_date']) }}</small>
+        <small>Schließungsgrund: {{ task['close_reason'] or '-' }}</small>
+        <small>Erstellt von: {{ task['creator_name'] }}</small>
+        <a
+          class="task-open-btn readonly"
+          href="{{ url_for('task_detail', task_id=task['id']) }}"
+          title="Task ansehen"
+          aria-label="Task ansehen"
+        >
+          <svg class="task-open-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+            <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle>
+          </svg>
+        </a>
+        <div class="archive-card-actions">
+          <form method="post" class="inline-form">
+            <input type="hidden" name="action" value="reopen">
+            <input type="hidden" name="task_id" value="{{ task['id'] }}">
+            <input type="hidden" name="return_tab" value="closed">
+            <button type="submit" class="secondary small-btn">Zurücksenden</button>
+          </form>
+          <form method="post" class="inline-form">
+            <input type="hidden" name="action" value="archive_task">
+            <input type="hidden" name="task_id" value="{{ task['id'] }}">
+            <input type="hidden" name="return_tab" value="closed">
+            <button type="submit" class="small-btn">Archivieren</button>
+          </form>
+          <button
+            type="button"
+            class="danger small-btn"
+            onclick="openDeleteConfirm('{{ task['id'] }}', 'closed')"
+          >Löschen</button>
+        </div>
+        <div class="task-footer">
+          <small>Bearbeiter:</small>
+          <div class="assignee-badges">
+            {% if task['assignees'] %}
+              {% for assignee in task['assignees'] %}
+              <span class="initial-badge {{ assignee['color_class'] }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
+              {% endfor %}
+            {% else %}
+              <span class="muted">Nicht zugewiesen</span>
+            {% endif %}
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+    {% else %}
+      <p class="empty">Aktuell gibt es keine geschlossenen Tasks.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if tab == 'archived' %}
+  <div class="task-list closed-task-grid">
+    {% if archived_tasks %}
+      {% for task in archived_tasks %}
+      <article class="task-card">
+        <strong>{{ task['title'] }}</strong>
+        <small>Kategorie: {{ ticket_category_label(task['ticket_category']) }}</small>
+        <small>Raum: {{ task['room'] or '-' }}</small>
+        <small>Ansprechpartner: {{ task['contact_person'] }}</small>
+        <small>Erstellt am: {{ format_system_datetime(task['created_at']) }}</small>
+        <small>Fällig bis: {{ format_datetime(task['due_date']) }}</small>
+        <small>Schließungsgrund: {{ task['close_reason'] or '-' }}</small>
+        <small>Erstellt von: {{ task['creator_name'] }}</small>
+        <a
+          class="task-open-btn readonly"
+          href="{{ url_for('task_detail', task_id=task['id']) }}"
+          title="Task ansehen"
+          aria-label="Task ansehen"
+        >
+          <svg class="task-open-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+            <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle>
+          </svg>
+        </a>
+        <div class="archive-card-actions">
+          <button
+            type="button"
+            class="danger small-btn"
+            onclick="openDeleteConfirm('{{ task['id'] }}', 'archived')"
+          >Endgültig löschen</button>
+        </div>
+        <div class="task-footer">
+          <small>Bearbeiter:</small>
+          <div class="assignee-badges">
+            {% if task['assignees'] %}
+              {% for assignee in task['assignees'] %}
+              <span class="initial-badge {{ assignee['color_class'] }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
+              {% endfor %}
+            {% else %}
+              <span class="muted">Nicht zugewiesen</span>
+            {% endif %}
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+    {% else %}
+      <p class="empty">Noch keine archivierten Tasks vorhanden.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if tab == 'log' %}
+  {% if log_entries %}
+  <div class="table-wrap">
+    <table class="log-table">
+      <thead>
+        <tr>
+          <th>Zeitpunkt</th>
+          <th>Benutzer</th>
+          <th>Aktion</th>
+          <th>Task</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in log_entries %}
+        <tr>
+          <td class="log-col-time muted">{{ format_system_datetime(entry['created_at']) }}</td>
+          <td class="log-col-user"><strong>{{ entry['actor_name'] }}</strong></td>
+          <td class="log-col-action">
+            <span class="log-dot log-dot-{{ entry['event_type'] }}"></span>
+            {{ entry['description'] }}
+          </td>
+          <td class="log-col-task">
+            {% if entry['task_id'] and entry['task_title'] %}
+            <a href="{{ url_for('task_detail', task_id=entry['task_id']) }}" class="log-task-link">{{ entry['task_title'] }}</a>
+            {% elif entry['task_title'] %}
+            <span class="muted">{{ entry['task_title'] }}</span>
+            {% endif %}
+          </td>
+          <td class="log-col-details muted">{{ entry['details'] or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">Noch keine Einträge vorhanden. Einträge werden nach {{ log_retention_days }} Tagen automatisch entfernt.</p>
+  {% endif %}
+  {% endif %}
+
+</section>
+
+<dialog id="delete-confirm-dialog" class="task-dialog confirm-dialog-small">
+  <form method="post">
+    <div class="dialog-head">
+      <strong>Task endgültig löschen?</strong>
+      <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
+    </div>
+    <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">
+      Diese Aktion kann nicht rückgängig gemacht werden.<br>
+      Der Task wird dauerhaft und unwiderruflich entfernt.
+    </p>
+    <input type="hidden" name="action" value="delete">
+    <input type="hidden" name="task_id" id="delete-confirm-task-id" value="">
+    <input type="hidden" name="return_tab" id="delete-confirm-return-tab" value="">
+    <div class="compact-actions">
+      <button type="submit" class="danger">Endgültig löschen</button>
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+function openDeleteConfirm(taskId, returnTab) {
+  document.getElementById('delete-confirm-task-id').value = taskId;
+  document.getElementById('delete-confirm-return-tab').value = returnTab;
+  document.getElementById('delete-confirm-dialog').showModal();
+}
+</script>
+{% endblock %}

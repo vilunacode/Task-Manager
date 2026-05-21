@@ -51,18 +51,29 @@
           data-created-at="{{ task['created_at'] }}"
           data-created-at-display="{{ format_system_datetime(task['created_at']) }}"
           data-can-assign="{{ 'true' if (task['status'] != 'closed' and can_assign_members) else 'false' }}"
+          data-description="{{ task['description'] | e }}"
+          data-contact-display="{{ task['contact_person_display'] | e }}"
+          data-creator-name="{{ task['creator_name'] | e }}"
+          data-category-label="{{ ticket_category_label(task['ticket_category']) | e }}"
+          data-room="{{ (task['room'] or '') | e }}"
           draggable="{{ 'true' if (user['is_admin'] or task['id'] in editable_task_ids) else 'false' }}"
         >
+          <span class="task-priority-corner priority-{{ task['priority'] or 3 }}">{{ task['priority'] or 3 }}</span>
           <strong>{{ task['title'] }}</strong>
-          <span class="task-priority-chip priority-{{ task['priority'] or 3 }}">Prio {{ task['priority'] or 3 }}</span>
           {% if due_today %}
           <span class="due-today-chip">Heute fällig</span>
           {% endif %}
           <div class="task-card-meta">
+            {% if task['due_date'] %}
             <div class="task-meta-row task-meta-row-due">
               <span class="task-meta-key">Fällig bis</span>
               <span class="task-meta-value">{{ format_datetime(task['due_date']) }}</span>
             </div>
+            {% else %}
+            <div class="task-meta-row task-meta-row-no-key">
+              <span class="task-meta-key">Kein Fälligkeitsdatum</span>
+            </div>
+            {% endif %}
             {% if user['card_view_mode'] == 'extended' %}
             <div class="task-meta-row">
               <span class="task-meta-key">Kategorie</span>
@@ -116,7 +127,7 @@
             <div class="assignee-badges">
               {% if task['assignees'] %}
                 {% for assignee in task['assignees'] %}
-                <span class="initial-badge {{ assignee['color_class'] }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
+                <span class="initial-badge {{ assignee['color_class'] }}" draggable="true" data-user-id="{{ assignee['id'] }}" data-task-id="{{ task['id'] }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
                 {% endfor %}
               {% else %}
                 <span class="muted">Nicht zugewiesen</span>
@@ -133,20 +144,18 @@
   {% endfor %}
 </section>
 
-<dialog id="no-category-dialog" class="task-dialog">
-  <div class="task-edit-form">
-    <div class="dialog-head full">
-      <h2>Keine Kategorie vorhanden</h2>
-      <button type="button" class="link-btn" onclick="document.getElementById('no-category-dialog').close()">Schließen</button>
-    </div>
-    {% if user['is_admin'] %}
-    <p>Es wurde noch keine Ticket-Kategorie angelegt. Bitte lege zuerst mindestens eine Kategorie in den <a href="{{ url_for('settings_page') }}">Einstellungen</a> an.</p>
-    {% else %}
-    <p>Es wurde noch keine Ticket-Kategorie angelegt. Bitte wende dich an einen Administrator.</p>
-    {% endif %}
-    <div class="actions-row">
-      <button type="button" class="secondary" onclick="document.getElementById('no-category-dialog').close()">OK</button>
-    </div>
+<dialog id="no-category-dialog" class="task-dialog confirm-dialog-small">
+  <div class="dialog-head">
+    <strong>Keine Kategorie vorhanden</strong>
+    <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
+  </div>
+  {% if user['is_admin'] %}
+  <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">Es wurde noch keine Ticket-Kategorie angelegt. Bitte lege zuerst mindestens eine Kategorie in den <a href="{{ url_for('settings_page') }}">Einstellungen</a> an.</p>
+  {% else %}
+  <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">Es wurde noch keine Ticket-Kategorie angelegt. Bitte wende dich an einen Administrator.</p>
+  {% endif %}
+  <div class="compact-actions">
+    <button type="button" class="secondary" onclick="this.closest('dialog').close()">OK</button>
   </div>
 </dialog>
 
@@ -154,7 +163,7 @@
   <form method="post" action="{{ url_for('create_task') }}" class="form-grid two-columns task-edit-form">
     <div class="dialog-head full">
       <h2>Neue Task erstellen</h2>
-      <button type="button" class="link-btn" id="close-create-task">Schließen</button>
+      <button type="button" class="link-btn" id="close-create-task">✕</button>
     </div>
     <label class="field-compact">Titel
       <input type="text" name="title" required>
@@ -218,6 +227,7 @@
   <form method="dialog" id="close-task-form" class="form-grid">
     <div class="dialog-head full">
       <h2>Task schließen</h2>
+      <button type="button" class="link-btn" onclick="document.getElementById('close-task-dialog-abort').click()">✕</button>
     </div>
     <p class="muted">Bist du dir sicher dass du diese Task schließen möchtest? Du kannst das Ticket dann nicht mehr zurücksetzen!</p>
     <label>Begründung
@@ -229,6 +239,8 @@
     </div>
   </form>
 </dialog>
+
+<div id="task-tooltip" class="task-tooltip" hidden></div>
 
 <script>
   function toggleCustomContact(select) {
@@ -263,10 +275,12 @@
     const USE_EXTENDED_META = "{{ '1' if user['card_view_mode'] == 'extended' else '0' }}" === "1";
     const IS_PING_READ_TAB = "{{ '1' if (filter_mode == 'pings' and ping_tab == 'read') else '0' }}" === "1";
     const IS_PING_UNREAD_TAB = "{{ '1' if (filter_mode == 'pings' and ping_tab == 'unread') else '0' }}" === "1";
+    const CURRENT_USER_ID = "{{ user['id'] }}";
 
     const cardById = new Map();
     let draggedTask = null;
     let draggedMember = null;
+    let draggedAssigneeBadge = null;
     let pendingCloseTaskId = null;
 
     const openReadonlySvg = `<svg class="task-open-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"></circle></svg>`;
@@ -326,7 +340,7 @@
       }
     };
 
-    const renderAssigneesHtml = (assignees) => {
+    const renderAssigneesHtml = (assignees, taskId = "") => {
       if (!Array.isArray(assignees) || !assignees.length) {
         return '<span class="muted">Nicht zugewiesen</span>';
       }
@@ -337,7 +351,7 @@
           const initials = escapeHtml(assignee.initials || "USR");
           const badgeColor = escapeHtml(assignee.badge_color || "");
           const inlineStyle = badgeColor ? ` style="background:${badgeColor};"` : "";
-          return `<span class="${classes}" title="${title}"${inlineStyle}>${initials}</span>`;
+          return `<span class="${classes}" draggable="true" data-user-id="${escapeHtml(String(assignee.id || ""))}" data-task-id="${escapeHtml(String(taskId))}" title="${title}"${inlineStyle}>${initials}</span>`;
         })
         .join("");
     };
@@ -346,7 +360,7 @@
       const dueChip = task.due_today ? '<span class="due-today-chip">Heute fällig</span>' : "";
       const priorityValueRaw = Number(task.priority || 3);
       const priorityValue = Number.isFinite(priorityValueRaw) ? Math.max(1, Math.min(5, priorityValueRaw)) : 3;
-      const priorityChip = `<span class="task-priority-chip priority-${priorityValue}">Prio ${priorityValue}</span>`;
+      const priorityCorner = `<span class="task-priority-corner priority-${priorityValue}">${priorityValue}</span>`;
       const openTitle = task.task_read_only ? "Task ansehen" : "Task bearbeiten";
       const readonlyClass = task.task_read_only ? "readonly" : "";
       const openHref = `/tasks/${task.id}`;
@@ -367,14 +381,14 @@
         : "";
 
       card.innerHTML = `
+        ${priorityCorner}
         <strong>${escapeHtml(task.title || "(Ohne Titel)")}</strong>
-        ${priorityChip}
         ${dueChip}
         <div class="task-card-meta">
-          <div class="task-meta-row task-meta-row-due">
-            <span class="task-meta-key">Fällig bis</span>
-            <span class="task-meta-value">${escapeHtml(task.due_date_display || "-")}</span>
-          </div>
+          ${task.due_date_display && task.due_date_display !== "-"
+            ? `<div class="task-meta-row task-meta-row-due"><span class="task-meta-key">Fällig bis</span><span class="task-meta-value">${escapeHtml(task.due_date_display)}</span></div>`
+            : `<div class="task-meta-row task-meta-row-no-key"><span class="task-meta-key">Kein Fälligkeitsdatum</span></div>`
+          }
           ${extraMeta}
         </div>
         <a class="task-open-btn ${readonlyClass}" href="${openHref}" title="${openTitle}" aria-label="${openTitle}">
@@ -384,7 +398,7 @@
         ${pingResetHtml}
         <div class="task-footer">
           <small>Bearbeiter:</small>
-          <div class="assignee-badges">${renderAssigneesHtml(task.assignees)}</div>
+          <div class="assignee-badges">${renderAssigneesHtml(task.assignees, task.id)}</div>
         </div>
       `;
     };
@@ -395,6 +409,11 @@
       card.dataset.canAssign = task.can_assign ? "true" : "false";
       card.dataset.createdAt = task.created_at || card.dataset.createdAt || "";
       card.dataset.createdAtDisplay = task.created_at_display || card.dataset.createdAtDisplay || "";
+      card.dataset.description = task.description || card.dataset.description || "";
+      card.dataset.contactDisplay = task.contact_person_display || card.dataset.contactDisplay || "";
+      card.dataset.creatorName = task.creator_name || card.dataset.creatorName || "";
+      card.dataset.categoryLabel = task.ticket_category_label || card.dataset.categoryLabel || "";
+      card.dataset.room = task.room || card.dataset.room || "";
       card.draggable = !!task.can_drag;
 
       card.className = "task-card";
@@ -439,6 +458,57 @@
       form.submit();
     };
 
+    const submitSelfAssign = (taskId) => {
+      const form = document.createElement("form");
+      form.method = "post";
+      form.action = `/tasks/${taskId}/assignees/self-assign`;
+
+      const filterInput = document.createElement("input");
+      filterInput.type = "hidden";
+      filterInput.name = "return_filter";
+      filterInput.value = "{{ filter_mode }}";
+
+      form.appendChild(filterInput);
+      document.body.appendChild(form);
+      form.submit();
+    };
+
+    const submitSelfRemove = (taskId) => {
+      const form = document.createElement("form");
+      form.method = "post";
+      form.action = `/tasks/${taskId}/assignees/self-remove`;
+
+      const filterInput = document.createElement("input");
+      filterInput.type = "hidden";
+      filterInput.name = "return_filter";
+      filterInput.value = "{{ filter_mode }}";
+
+      form.appendChild(filterInput);
+      document.body.appendChild(form);
+      form.submit();
+    };
+
+    const submitRemoveAssignee = (taskId, userId) => {
+      const form = document.createElement("form");
+      form.method = "post";
+      form.action = `/tasks/${taskId}/assignees/remove`;
+
+      const userInput = document.createElement("input");
+      userInput.type = "hidden";
+      userInput.name = "user_id";
+      userInput.value = userId;
+
+      const filterInput = document.createElement("input");
+      filterInput.type = "hidden";
+      filterInput.name = "return_filter";
+      filterInput.value = "{{ filter_mode }}";
+
+      form.appendChild(userInput);
+      form.appendChild(filterInput);
+      document.body.appendChild(form);
+      form.submit();
+    };
+
     const submitAddAssignee = (taskId, userId) => {
       const form = document.createElement("form");
       form.method = "post";
@@ -464,13 +534,109 @@
       document.querySelectorAll('.task-card[data-can-assign="true"]').forEach((card) => card.classList.remove("drop-target"));
     };
 
+    const tooltip = document.getElementById("task-tooltip");
+    let tooltipTimeout = null;
+
+    const showTooltip = (card) => {
+      if (!tooltip) return;
+      const desc = card.dataset.description || "";
+      const contact = card.dataset.contactDisplay || "-";
+      const createdAtDisplay = card.dataset.createdAtDisplay || "-";
+      const titleEl = card.querySelector("strong");
+      const title = titleEl ? titleEl.textContent : "";
+      const dueMeta = card.querySelector(".task-meta-row-due .task-meta-value");
+      const due = dueMeta ? dueMeta.textContent.trim() : "-";
+      const prioCorner = card.querySelector(".task-priority-corner");
+      const prio = prioCorner ? `Prio ${prioCorner.textContent.trim()}` : "-";
+      const categoryText = card.dataset.categoryLabel || "-";
+      const roomText = card.dataset.room || "-";
+      const createdByText = card.dataset.creatorName || "-";
+      const assigneeEls = card.querySelectorAll(".task-footer .initial-badge");
+      const assigneesHtml = assigneeEls.length
+        ? Array.from(assigneeEls).map(el => `<span class="initial-badge ${el.className.replace("initial-badge","").trim()}" title="${escapeHtml(el.title)}">${escapeHtml(el.textContent)}</span>`).join("")
+        : '<span class="muted">Nicht zugewiesen</span>';
+
+      tooltip.innerHTML = `
+        <div class="task-tooltip-title">${escapeHtml(title)}</div>
+        ${desc ? `<p class="task-tooltip-desc">${escapeHtml(desc)}</p>` : '<p class="task-tooltip-desc muted">Keine Beschreibung</p>'}
+        <div class="task-tooltip-grid">
+          <span class="task-tooltip-key">Priorität</span><span>${escapeHtml(prio)}</span>
+          <span class="task-tooltip-key">Kategorie</span><span>${escapeHtml(categoryText)}</span>
+          <span class="task-tooltip-key">Raum</span><span>${escapeHtml(roomText)}</span>
+          <span class="task-tooltip-key">Ansprechpartner</span><span>${escapeHtml(contact)}</span>
+          <span class="task-tooltip-key">Fällig bis</span><span>${escapeHtml(due)}</span>
+          <span class="task-tooltip-key">Erstellt von</span><span>${escapeHtml(createdByText)}</span>
+          <span class="task-tooltip-key">Erstellt am</span><span>${escapeHtml(createdAtDisplay)}</span>
+        </div>
+        <div class="task-tooltip-assignees">
+          <span class="task-tooltip-key">Bearbeiter</span>
+          <div class="assignee-badges">${assigneesHtml}</div>
+        </div>
+      `;
+
+      const rect = card.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+
+      tooltip.hidden = false;
+      tooltip.style.top = "";
+      tooltip.style.left = "";
+      tooltip.style.right = "";
+
+      const tipW = 280;
+      const spaceRight = vw - rect.right;
+      const spaceLeft = rect.left;
+
+      let left;
+      if (spaceRight >= tipW + 12) {
+        left = rect.right + 8;
+      } else if (spaceLeft >= tipW + 12) {
+        left = rect.left - tipW - 8;
+      } else {
+        left = Math.max(8, rect.left);
+      }
+
+      let top = rect.top;
+      tooltip.style.width = tipW + "px";
+      tooltip.style.left = left + "px";
+      tooltip.style.top = top + "px";
+
+      const tipRect = tooltip.getBoundingClientRect();
+      if (tipRect.bottom > vh - 8) {
+        tooltip.style.top = Math.max(8, vh - tipRect.height - 8) + "px";
+      }
+    };
+
+    const hideTooltip = () => {
+      clearTimeout(tooltipTimeout);
+      if (tooltip) tooltip.hidden = true;
+    };
+
     const bindTaskCard = (card) => {
       if (card.dataset.boundCard === "true") {
         return;
       }
       card.dataset.boundCard = "true";
 
-      card.addEventListener("dragstart", () => {
+      card.addEventListener("mouseenter", () => {
+        clearTimeout(tooltipTimeout);
+        tooltipTimeout = setTimeout(() => showTooltip(card), 400);
+      });
+
+      card.addEventListener("mouseleave", () => {
+        clearTimeout(tooltipTimeout);
+        hideTooltip();
+      });
+
+      card.addEventListener("dragstart", (event) => {
+        hideTooltip();
+        const badge = event.target.closest(".initial-badge[data-user-id][data-task-id]");
+        if (badge) {
+          event.stopPropagation();
+          draggedAssigneeBadge = { taskId: badge.dataset.taskId, userId: badge.dataset.userId };
+          event.dataTransfer.effectAllowed = "move";
+          return;
+        }
         if (!card.draggable) {
           return;
         }
@@ -479,15 +645,20 @@
       });
 
       card.addEventListener("dragend", () => {
+        if (draggedAssigneeBadge) {
+          draggedAssigneeBadge = null;
+          return;
+        }
         card.classList.remove("dragging");
         draggedTask = null;
         dropColumns.forEach((column) => column.classList.remove("drop-target"));
       });
 
       card.addEventListener("dragover", (event) => {
-        if (!draggedMember || card.dataset.canAssign !== "true") {
-          return;
-        }
+        if (!draggedMember) return;
+        const isSelf = draggedMember.dataset.userId === CURRENT_USER_ID;
+        const canDrop = card.dataset.canAssign === "true" || (isSelf && card.dataset.currentStatus !== "closed");
+        if (!canDrop) return;
         event.preventDefault();
         card.classList.add("drop-target");
       });
@@ -497,18 +668,21 @@
       });
 
       card.addEventListener("drop", (event) => {
-        if (!draggedMember || card.dataset.canAssign !== "true") {
-          return;
-        }
+        if (!draggedMember) return;
+        const isSelf = draggedMember.dataset.userId === CURRENT_USER_ID;
+        const canDrop = card.dataset.canAssign === "true" || (isSelf && card.dataset.currentStatus !== "closed");
+        if (!canDrop) return;
         event.preventDefault();
         card.classList.remove("drop-target");
 
         const taskId = card.dataset.taskId;
-        const userId = draggedMember.dataset.userId;
-        if (!taskId || !userId) {
-          return;
+        if (!taskId) return;
+
+        if (isSelf) {
+          submitSelfAssign(taskId);
+        } else {
+          submitAddAssignee(taskId, draggedMember.dataset.userId);
         }
-        submitAddAssignee(taskId, userId);
       });
     };
 
@@ -560,15 +734,26 @@
       submitStatusChange(taskId, "closed", reason);
     });
 
+    const setSelfAssignTargets = (enable) => {
+      document.querySelectorAll(".task-card[data-current-status]").forEach((card) => {
+        if (card.dataset.currentStatus === "closed") return;
+        card.classList.toggle("self-assign-enabled", enable);
+      });
+    };
+
     draggableMembers.forEach((member) => {
       member.addEventListener("dragstart", () => {
         draggedMember = member;
         member.classList.add("dragging");
+        if (member.dataset.userId === CURRENT_USER_ID) {
+          setSelfAssignTargets(true);
+        }
       });
       member.addEventListener("dragend", () => {
         member.classList.remove("dragging");
         draggedMember = null;
         clearAssigneeTargets();
+        setSelfAssignTargets(false);
       });
     });
 
@@ -606,6 +791,30 @@
         }
         submitStatusChange(taskId, targetStatus);
       });
+    });
+
+    document.addEventListener("dragover", (event) => {
+      if (draggedAssigneeBadge) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      }
+    });
+
+    document.addEventListener("drop", (event) => {
+      if (!draggedAssigneeBadge) return;
+      const sameCard = event.target.closest(`.task-card[data-task-id="${draggedAssigneeBadge.taskId}"]`);
+      if (sameCard) {
+        draggedAssigneeBadge = null;
+        return;
+      }
+      event.preventDefault();
+      const { taskId, userId } = draggedAssigneeBadge;
+      draggedAssigneeBadge = null;
+      if (userId === CURRENT_USER_ID) {
+        submitSelfRemove(taskId);
+      } else {
+        submitRemoveAssignee(taskId, userId);
+      }
     });
 
     document.querySelectorAll(".task-card[data-task-id]").forEach((card) => {

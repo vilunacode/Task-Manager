@@ -98,7 +98,7 @@
   <form method="post" class="form-grid two-columns" id="create-calendar-event-form">
     <div class="dialog-head full">
       <h2>Termin eintragen</h2>
-      <button type="button" class="link-btn" id="create-event-dialog-close">Schließen</button>
+      <button type="button" class="link-btn" id="create-event-dialog-close">✕</button>
     </div>
     <input type="hidden" name="action" value="create">
     <input type="hidden" name="month" value="{{ selected_month }}">
@@ -126,7 +126,7 @@
     <dialog id="day-events-dialog-{{ cell['day_key'] }}" class="task-dialog">
       <div class="dialog-head full">
         <h2>Einträge am {{ cell['date'].strftime('%d.%m.%Y') }}</h2>
-        <button type="button" class="link-btn" onclick="document.getElementById('day-events-dialog-{{ cell.day_key }}').close()">Schließen</button>
+        <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
       </div>
       <div class="day-dialog-event-list">
         {% for event in cell['events'] %}
@@ -159,7 +159,7 @@
       <form method="post" class="form-grid two-columns">
         <div class="dialog-head full">
           <h2>Termin bearbeiten</h2>
-          <button type="button" class="link-btn close-edit-event-dialog" data-edit-dialog-id="edit-event-dialog-{{ event.id }}">Schließen</button>
+          <button type="button" class="link-btn close-edit-event-dialog" data-edit-dialog-id="edit-event-dialog-{{ event.id }}">✕</button>
         </div>
         <input type="hidden" name="action" value="update">
         <input type="hidden" name="event_id" value="{{ event['id'] }}">
@@ -194,18 +194,19 @@
 </div>
 
 <dialog id="confirm-delete-event-dialog" class="task-dialog confirm-dialog-small">
-  <form method="post" class="form-grid">
-    <div class="dialog-head full">
-      <h2>Termin löschen</h2>
+  <form method="post">
+    <div class="dialog-head">
+      <strong>Termin löschen?</strong>
+      <button type="button" class="link-btn" onclick="document.getElementById('confirm-delete-dialog-cancel').click()">✕</button>
     </div>
-    <p class="muted">Möchtest du diesen Termin wirklich löschen?</p>
+    <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">Möchtest du diesen Termin wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.</p>
     <input type="hidden" name="action" value="delete">
     <input type="hidden" name="event_id" id="confirm-delete-event-id" value="">
     <input type="hidden" id="confirm-delete-source-dialog-id" value="">
     <input type="hidden" name="month" value="{{ selected_month }}">
     <div class="compact-actions">
-      <button type="button" class="secondary" id="confirm-delete-dialog-cancel">Abbrechen</button>
       <button type="submit" class="danger">Ja, löschen</button>
+      <button type="button" class="secondary" id="confirm-delete-dialog-cancel">Abbrechen</button>
     </div>
   </form>
 </dialog>

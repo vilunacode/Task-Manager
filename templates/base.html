@@ -30,8 +30,8 @@
         <a href="{{ url_for('settings_page') }}">Einstellungen</a>
         {% if user['is_admin'] %}
         <a href="{{ url_for('manage_users') }}">Benutzer</a>
-        <a href="{{ url_for('admin_closed_tasks') }}" class="nav-with-count">
-          Geschlossene Tasks
+        <a href="{{ url_for('archive') }}" class="nav-with-count">
+          Archiv
           {% if closed_task_count and closed_task_count > 0 %}
           <span class="nav-count-badge" title="Geschlossene Tasks">{{ closed_task_count }}</span>
           {% endif %}

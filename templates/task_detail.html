@@ -202,16 +202,14 @@
             class="secondary small-btn"
             onclick="document.getElementById('edit-comment-dialog-{{ comment.id }}').showModal()"
           >Kommentar bearbeiten</button>
-          <form method="post" action="{{ url_for('delete_task_comment', task_id=task['id'], comment_id=comment['id']) }}" onsubmit="return confirm('Kommentar wirklich löschen?');">
-            <button type="submit" class="danger small-btn">Kommentar löschen</button>
-          </form>
+          <button type="button" class="danger small-btn" onclick="openDeleteCommentConfirm('{{ url_for('delete_task_comment', task_id=task.id, comment_id=comment.id) }}')">Kommentar löschen</button>
         </div>
 
         <dialog id="edit-comment-dialog-{{ comment.id }}" class="task-dialog">
           <form method="post" action="{{ url_for('edit_task_comment', task_id=task['id'], comment_id=comment['id']) }}" class="form-grid">
             <div class="dialog-head full">
               <h2>Kommentar bearbeiten</h2>
-              <button type="button" class="link-btn" onclick="document.getElementById('edit-comment-dialog-{{ comment.id }}').close()">Schließen</button>
+              <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
             </div>
             <label>Kommentar
               <textarea name="content" rows="4" required>{{ comment['content'] }}</textarea>
@@ -328,5 +326,24 @@
 
     renderMentionChips();
   })();
+</script>
+<dialog id="delete-comment-dialog" class="task-dialog confirm-dialog-small">
+  <form method="post" id="delete-comment-form">
+    <div class="dialog-head">
+      <strong>Kommentar löschen?</strong>
+      <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
+    </div>
+    <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">Der Kommentar wird dauerhaft entfernt. Diese Aktion kann nicht rückgängig gemacht werden.</p>
+    <div class="compact-actions">
+      <button type="submit" class="danger">Ja, löschen</button>
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
+    </div>
+  </form>
+</dialog>
+<script>
+function openDeleteCommentConfirm(actionUrl) {
+  document.getElementById('delete-comment-form').action = actionUrl;
+  document.getElementById('delete-comment-dialog').showModal();
+}
 </script>
 {% endblock %}

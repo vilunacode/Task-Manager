@@ -14,7 +14,18 @@
         <div class="overview-task-list">
           {% if tasks %}
             {% for task in tasks %}
-            <div class="overview-task-card" data-task-id="{{ task['id'] }}" data-created-at="{{ task['created_at'] }}" data-status="{{ task['status'] }}">
+            <div class="overview-task-card"
+              data-task-id="{{ task['id'] }}"
+              data-created-at="{{ task['created_at'] }}"
+              data-status="{{ task['status'] }}"
+              data-description="{{ task['description'] | e }}"
+              data-contact-display="{{ task['contact_person_display'] | e }}"
+              data-creator-name="{{ task['creator_name'] | e }}"
+              data-category-label="{{ ticket_category_label(task['ticket_category']) | e }}"
+              data-room="{{ (task['room'] or '') | e }}"
+              data-created-at-display="{{ format_system_datetime(task['created_at']) | e }}"
+            >
+              <span class="task-priority-corner priority-{{ task['priority'] or 3 }}">{{ task['priority'] or 3 }}</span>
               <strong>{{ task['title'] }}</strong>
               <small>Fällig: {{ format_datetime(task['due_date']) }}</small>
               <div class="overview-assignees">
@@ -26,7 +37,6 @@
                   <span class="muted">Nicht zugewiesen</span>
                 {% endif %}
               </div>
-              <span class="task-priority-chip overview-priority-chip priority-{{ task['priority'] or 3 }}">Prio {{ task['priority'] or 3 }}</span>
             </div>
             {% endfor %}
           {% else %}
@@ -38,6 +48,8 @@
     </section>
   </section>
 </div>
+
+<div id="task-tooltip" class="task-tooltip" hidden></div>
 
 <script>
   (() => {
@@ -143,12 +155,35 @@
       return Math.max(1, Math.min(5, Math.round(parsed)));
     };
 
+    const escapeHtml = (value) => String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+
+    const applyTooltipData = (card, task) => {
+      card.dataset.description = task.description || card.dataset.description || "";
+      card.dataset.contactDisplay = task.contact_person_display || card.dataset.contactDisplay || "";
+      card.dataset.creatorName = task.creator_name || card.dataset.creatorName || "";
+      card.dataset.categoryLabel = task.ticket_category_label || card.dataset.categoryLabel || "";
+      card.dataset.room = task.room || card.dataset.room || "";
+      card.dataset.createdAtDisplay = task.created_at_display || card.dataset.createdAtDisplay || "";
+    };
+
     const createTaskCard = (task) => {
       const card = document.createElement("div");
       card.className = "overview-task-card new-task-pop";
       card.dataset.taskId = String(task.id);
       card.dataset.createdAt = task.created_at || "";
       card.dataset.status = task.status || "";
+      applyTooltipData(card, task);
+
+      const priority = clampPriority(task.priority);
+      const priorityCorner = document.createElement("span");
+      priorityCorner.className = `task-priority-corner priority-${priority}`;
+      priorityCorner.textContent = String(priority);
+      card.appendChild(priorityCorner);
 
       const badge = document.createElement("span");
       badge.className = "new-task-chip";
@@ -167,20 +202,15 @@
       const assigneesWrap = document.createElement("div");
       assigneesWrap.className = "overview-assignees";
       renderAssignees(assigneesWrap, task.assignees);
-
       card.appendChild(assigneesWrap);
 
-      const priority = clampPriority(task.priority);
-      const priorityChip = document.createElement("span");
-      priorityChip.className = `task-priority-chip overview-priority-chip priority-${priority}`;
-      priorityChip.textContent = `Prio ${priority}`;
-      card.appendChild(priorityChip);
-
+      bindTooltip(card);
       return card;
     };
 
     const updateTaskCard = (card, task) => {
       card.dataset.status = task.status || "";
+      applyTooltipData(card, task);
 
       const title = card.querySelector("strong");
       if (title) {
@@ -198,10 +228,10 @@
       }
 
       const priority = clampPriority(task.priority);
-      const priorityChip = card.querySelector(".overview-priority-chip");
-      if (priorityChip) {
-        priorityChip.className = `task-priority-chip overview-priority-chip priority-${priority}`;
-        priorityChip.textContent = `Prio ${priority}`;
+      const priorityCorner = card.querySelector(".task-priority-corner");
+      if (priorityCorner) {
+        priorityCorner.className = `task-priority-corner priority-${priority}`;
+        priorityCorner.textContent = String(priority);
       }
     };
 
@@ -312,6 +342,85 @@
     if (columns.length) {
       setInterval(pollAndSyncTasks, REFRESH_INTERVAL_MS);
     }
+
+    const tooltip = document.getElementById("task-tooltip");
+    let tooltipTimeout = null;
+
+    const showTooltip = (card) => {
+      if (!tooltip) return;
+      const titleEl = card.querySelector("strong");
+      const title = titleEl ? titleEl.textContent : "";
+      const prioCorner = card.querySelector(".task-priority-corner");
+      const prio = prioCorner ? `Prio ${prioCorner.textContent.trim()}` : "-";
+      const due = (card.querySelector(".overview-due-line") || card.querySelector("small"))?.textContent.replace("Fällig: ", "").trim() || "-";
+      const desc = card.dataset.description || "";
+      const contact = card.dataset.contactDisplay || "-";
+      const createdAtDisplay = card.dataset.createdAtDisplay || "-";
+      const categoryText = card.dataset.categoryLabel || "-";
+      const roomText = card.dataset.room || "-";
+      const createdByText = card.dataset.creatorName || "-";
+      const assigneeEls = card.querySelectorAll(".overview-assignees .initial-badge");
+      const assigneesHtml = assigneeEls.length
+        ? Array.from(assigneeEls).map(el => `<span class="initial-badge ${el.className.replace("initial-badge","").trim()}" title="${escapeHtml(el.title)}">${escapeHtml(el.textContent)}</span>`).join("")
+        : '<span class="muted">Nicht zugewiesen</span>';
+
+      tooltip.innerHTML = `
+        <div class="task-tooltip-title">${escapeHtml(title)}</div>
+        ${desc ? `<p class="task-tooltip-desc">${escapeHtml(desc)}</p>` : '<p class="task-tooltip-desc muted">Keine Beschreibung</p>'}
+        <div class="task-tooltip-grid">
+          <span class="task-tooltip-key">Priorität</span><span>${escapeHtml(prio)}</span>
+          <span class="task-tooltip-key">Kategorie</span><span>${escapeHtml(categoryText)}</span>
+          <span class="task-tooltip-key">Raum</span><span>${escapeHtml(roomText)}</span>
+          <span class="task-tooltip-key">Ansprechpartner</span><span>${escapeHtml(contact)}</span>
+          <span class="task-tooltip-key">Fällig bis</span><span>${escapeHtml(due)}</span>
+          <span class="task-tooltip-key">Erstellt von</span><span>${escapeHtml(createdByText)}</span>
+          <span class="task-tooltip-key">Erstellt am</span><span>${escapeHtml(createdAtDisplay)}</span>
+        </div>
+        <div class="task-tooltip-assignees">
+          <span class="task-tooltip-key">Bearbeiter</span>
+          <div class="assignee-badges">${assigneesHtml}</div>
+        </div>
+      `;
+
+      const rect = card.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const tipW = 280;
+
+      tooltip.hidden = false;
+      tooltip.style.width = tipW + "px";
+
+      const spaceRight = vw - rect.right;
+      let left = spaceRight >= tipW + 12 ? rect.right + 8 : rect.left - tipW - 8;
+      if (left < 8) left = Math.max(8, rect.left);
+      tooltip.style.left = left + "px";
+      tooltip.style.top = rect.top + "px";
+
+      const tipRect = tooltip.getBoundingClientRect();
+      if (tipRect.bottom > vh - 8) {
+        tooltip.style.top = Math.max(8, vh - tipRect.height - 8) + "px";
+      }
+    };
+
+    const hideTooltip = () => {
+      clearTimeout(tooltipTimeout);
+      if (tooltip) tooltip.hidden = true;
+    };
+
+    const bindTooltip = (card) => {
+      if (card.dataset.tooltipBound === "true") return;
+      card.dataset.tooltipBound = "true";
+      card.addEventListener("mouseenter", () => {
+        clearTimeout(tooltipTimeout);
+        tooltipTimeout = setTimeout(() => showTooltip(card), 400);
+      });
+      card.addEventListener("mouseleave", () => {
+        clearTimeout(tooltipTimeout);
+        hideTooltip();
+      });
+    };
+
+    document.querySelectorAll(".overview-task-card[data-task-id]").forEach(bindTooltip);
   })();
 </script>
 {% endblock %}

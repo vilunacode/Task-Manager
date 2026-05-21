@@ -1,20 +1,57 @@
 {% extends 'base.html' %}
-{% block title %}Initiales Setup | Task Manager{% endblock %}
+{% block title %}Willkommen | Task Manager{% endblock %}
 {% block content %}
-<section class="card auth-card">
-  <h1>Erstes Setup</h1>
-  <p class="subtitle">Lege den ersten Administrator-Account an.</p>
-  <form method="post" class="form-grid">
-    <label>Admin-Benutzername
-      <input type="text" name="username" maxlength="13" required>
-    </label>
-    <label>Kürzel (3 Zeichen)
-      <input type="text" name="initials" minlength="3" maxlength="3" required>
-    </label>
-    <label>Passwort
-      <input type="password" name="password" required>
-    </label>
-    <button type="submit">Administrator erstellen</button>
-  </form>
-</section>
+<div class="setup-page">
+  <section class="card setup-hero">
+    <div class="setup-hero-content">
+      <div class="setup-logo-mark">TM</div>
+      <div>
+        <h1>Willkommen beim Task Manager</h1>
+        <p class="setup-tagline">Dein Team. Deine Aufgaben. Alles an einem Ort.</p>
+      </div>
+    </div>
+    <div class="setup-features">
+      <div class="setup-feature">
+        <span class="setup-feature-icon">&#9776;</span>
+        <div>
+          <strong>Aufgaben verwalten</strong>
+          <p>Erstelle, delegiere und verfolge Aufgaben mit Prioritäten, Kategorien und Fälligkeitsdaten.</p>
+        </div>
+      </div>
+      <div class="setup-feature">
+        <span class="setup-feature-icon">&#128101;</span>
+        <div>
+          <strong>Team koordinieren</strong>
+          <p>Weise Bearbeiter zu, hinterlasse Kommentare und behalte den Überblick über alle laufenden Tasks.</p>
+        </div>
+      </div>
+      <div class="setup-feature">
+        <span class="setup-feature-icon">&#128202;</span>
+        <div>
+          <strong>Live-Übersicht</strong>
+          <p>Das Kanban-Board aktualisiert sich automatisch — neue Aufgaben erscheinen sofort für alle.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card setup-form-card">
+    <h2>Administrator-Account anlegen</h2>
+    <p class="muted" style="margin-bottom: 18px;">Erstelle zunächst deinen Admin-Account. Danach kannst du Rollen, Benutzer und Kategorien einrichten.</p>
+    <form method="post" class="form-grid two-columns">
+      <label>Benutzername
+        <input type="text" name="username" maxlength="13" required autofocus>
+      </label>
+      <label>Kürzel <small class="muted">(3 Zeichen, A–Z/0–9)</small>
+        <input type="text" name="initials" minlength="3" maxlength="3" placeholder="z.B. ADM" required>
+      </label>
+      <label style="grid-column: 1 / -1;">Passwort
+        <input type="password" name="password" required>
+      </label>
+      <div class="actions-row" style="grid-column: 1 / -1;">
+        <button type="submit">Account erstellen &amp; Einrichtung starten</button>
+      </div>
+    </form>
+  </section>
+</div>
 {% endblock %}

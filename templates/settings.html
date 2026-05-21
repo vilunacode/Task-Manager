@@ -99,11 +99,7 @@
         <tr>
           <td>{{ cat['label'] }}</td>
           <td>
-            <form method="post" onsubmit="return confirm('Kategorie wirklich entfernen?');">
-              <input type="hidden" name="action" value="delete-category">
-              <input type="hidden" name="category_key" value="{{ cat['category_key'] }}">
-              <button type="submit" class="danger">Entfernen</button>
-            </form>
+            <button type="button" class="danger" onclick="openDeleteCategoryConfirm('{{ cat.category_key }}')">Entfernen</button>
           </td>
         </tr>
         {% endfor %}
@@ -115,4 +111,26 @@
   {% endif %}
 </section>
 {% endif %}
+
+<dialog id="delete-category-dialog" class="task-dialog confirm-dialog-small">
+  <form method="post" id="delete-category-form">
+    <div class="dialog-head">
+      <strong>Kategorie entfernen?</strong>
+      <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
+    </div>
+    <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">Soll diese Kategorie wirklich entfernt werden? Diese Aktion kann nicht rückgängig gemacht werden.</p>
+    <input type="hidden" name="action" value="delete-category">
+    <input type="hidden" name="category_key" id="delete-category-key" value="">
+    <div class="compact-actions">
+      <button type="submit" class="danger">Ja, entfernen</button>
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
+    </div>
+  </form>
+</dialog>
+<script>
+function openDeleteCategoryConfirm(categoryKey) {
+  document.getElementById('delete-category-key').value = categoryKey;
+  document.getElementById('delete-category-dialog').showModal();
+}
+</script>
 {% endblock %}

@@ -1,0 +1,166 @@
+{% extends 'base.html' %}
+{% block title %}Einrichtung | Task Manager{% endblock %}
+{% block content %}
+<div class="onboarding-page">
+
+  <section class="card onboarding-header">
+    <div class="onboarding-header-inner">
+      <div>
+        <h1>Einrichtung</h1>
+        <p class="muted">Richte Rollen, Benutzer und Kategorien ein, bevor du loslegst — oder überspringe diesen Schritt und fange direkt an.</p>
+      </div>
+      <a href="{{ url_for('dashboard') }}" class="btn-finish">Zum Dashboard &rarr;</a>
+    </div>
+  </section>
+
+  <div class="onboarding-tabs-wrap">
+    <nav class="onboarding-tabs">
+      <button type="button" class="onboarding-tab {% if active_tab == 'rollen' %}active{% endif %}" data-tab="rollen">
+        Rollen
+        {% if roles %}<span class="tab-count">{{ roles|length }}</span>{% endif %}
+      </button>
+      <button type="button" class="onboarding-tab {% if active_tab == 'benutzer' %}active{% endif %}" data-tab="benutzer">
+        Benutzer
+        <span class="tab-count">{{ users|length }}</span>
+      </button>
+      <button type="button" class="onboarding-tab {% if active_tab == 'kategorien' %}active{% endif %}" data-tab="kategorien">
+        Ticket-Kategorien
+        {% if categories %}<span class="tab-count">{{ categories|length }}</span>{% endif %}
+      </button>
+    </nav>
+
+    <!-- Rollen -->
+    <section class="card onboarding-panel {% if active_tab == 'rollen' %}active{% endif %}" id="panel-rollen">
+      <div class="onboarding-panel-head">
+        <h2>Rollen</h2>
+        <p class="muted">Rollen bestimmen, welche Aufgaben Benutzer sehen und bearbeiten dürfen. Erstelle zum Beispiel "IT-Support", "Techniker" oder "Verwaltung".</p>
+      </div>
+      <form method="post" class="form-grid three-columns onboarding-form">
+        <input type="hidden" name="action" value="create-role">
+        <input type="hidden" name="active_tab" value="rollen">
+        <label>Rollenname
+          <input type="text" name="role_label" placeholder="z.B. IT-Support" required>
+        </label>
+        <label>Farbe
+          <input type="color" name="role_color" value="#6366f1">
+        </label>
+        <div class="form-action-cell">
+          <button type="submit" class="secondary">Rolle erstellen</button>
+        </div>
+      </form>
+
+      {% if roles %}
+      <div class="onboarding-list">
+        {% for role in roles %}
+        <div class="onboarding-list-item">
+          <span class="role-color-dot" style="background: {{ role['color'] }};"></span>
+          <span>{{ role['label'] }}</span>
+          <span class="muted" style="font-size:0.8rem;">{{ role['role_key'] }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="muted onboarding-empty">Noch keine Rollen angelegt.</p>
+      {% endif %}
+    </section>
+
+    <!-- Benutzer -->
+    <section class="card onboarding-panel {% if active_tab == 'benutzer' %}active{% endif %}" id="panel-benutzer">
+      <div class="onboarding-panel-head">
+        <h2>Benutzer</h2>
+        <p class="muted">Lege Accounts für dein Team an. Jeder Benutzer braucht eine Rolle, um auf Aufgaben zuzugreifen.</p>
+      </div>
+      <form method="post" class="form-grid three-columns onboarding-form">
+        <input type="hidden" name="action" value="create-user">
+        <input type="hidden" name="active_tab" value="benutzer">
+        <label>Benutzername
+          <input type="text" name="username" maxlength="13" placeholder="z.B. mmeier" required>
+        </label>
+        <label>Kürzel <small class="muted">(3 Z.)</small>
+          <input type="text" name="initials" minlength="3" maxlength="3" placeholder="MME" required>
+        </label>
+        <label>Passwort
+          <input type="password" name="password" required>
+        </label>
+        <label>Rolle
+          <select name="role" required>
+            {% for opt in role_opts %}
+            <option value="{{ opt['value'] }}">{{ opt['label'] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="form-action-cell" style="grid-column: span 2;">
+          <button type="submit" class="secondary">Benutzer anlegen</button>
+        </div>
+      </form>
+
+      {% if users %}
+      <div class="onboarding-list">
+        {% for u in users %}
+        <div class="onboarding-list-item">
+          <span class="initial-badge {% if u['is_admin'] %}badge-admin{% else %}badge-role-{{ u['role'] }}{% endif %}">{{ u['initials'] }}</span>
+          <span>{{ u['username'] }}</span>
+          <span class="muted" style="font-size:0.8rem;">{% if u['is_admin'] %}Admin{% else %}{{ u['role'] }}{% endif %}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="muted onboarding-empty">Noch keine weiteren Benutzer angelegt.</p>
+      {% endif %}
+    </section>
+
+    <!-- Kategorien -->
+    <section class="card onboarding-panel {% if active_tab == 'kategorien' %}active{% endif %}" id="panel-kategorien">
+      <div class="onboarding-panel-head">
+        <h2>Ticket-Kategorien</h2>
+        <p class="muted">Kategorien helfen beim Sortieren und Filtern von Aufgaben. Zum Beispiel: "Drucker / Scanner", "Netzwerk" oder "Hardware".</p>
+      </div>
+      <form method="post" class="form-grid three-columns onboarding-form">
+        <input type="hidden" name="action" value="create-category">
+        <input type="hidden" name="active_tab" value="kategorien">
+        <label style="grid-column: span 2;">Kategoriename
+          <input type="text" name="category_label" placeholder="z.B. Drucker / Scanner" required>
+        </label>
+        <div class="form-action-cell">
+          <button type="submit" class="secondary">Kategorie erstellen</button>
+        </div>
+      </form>
+
+      {% if categories %}
+      <div class="onboarding-list">
+        {% for cat in categories %}
+        <div class="onboarding-list-item">
+          <span class="onboarding-cat-dot">&#9632;</span>
+          <span>{{ cat['label'] }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="muted onboarding-empty">Noch keine Kategorien angelegt.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="onboarding-footer">
+    <a href="{{ url_for('dashboard') }}" class="btn-finish-footer">Einrichtung abschließen &rarr;</a>
+  </div>
+</div>
+
+<script>
+  (() => {
+    const tabs = document.querySelectorAll(".onboarding-tab");
+    const panels = document.querySelectorAll(".onboarding-panel");
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const target = tab.dataset.tab;
+        tabs.forEach((t) => t.classList.remove("active"));
+        panels.forEach((p) => p.classList.remove("active"));
+        tab.classList.add("active");
+        const panel = document.getElementById(`panel-${target}`);
+        if (panel) panel.classList.add("active");
+      });
+    });
+  })();
+</script>
+{% endblock %}
