@@ -49,19 +49,57 @@
         </div>
       </form>
 
-      {% if roles %}
       <div class="onboarding-list">
+        <div class="onboarding-list-item">
+          <div class="onboarding-item-row">
+            <span class="role-color-dot" style="background: {{ admin_color }};"></span>
+            <span>{{ admin_label }}</span>
+            <span class="muted" style="font-size:0.8rem;">Systemrolle</span>
+            <div class="onboarding-item-actions">
+              <button type="button" class="ob-icon-btn" onclick="toggleOnboardingEdit('role-edit-admin')">&#9998;</button>
+            </div>
+          </div>
+          <form method="post" class="onboarding-edit-inline" id="role-edit-admin">
+            <input type="hidden" name="action" value="edit-admin-color">
+            <input type="hidden" name="active_tab" value="rollen">
+            <label>Name<input type="text" name="role_label" value="{{ admin_label }}" required></label>
+            <label>Farbe<input type="color" name="role_color" value="{{ admin_color }}"></label>
+            <div class="onboarding-edit-actions">
+              <button type="submit" class="secondary small-btn">Speichern</button>
+              <button type="button" class="small-btn" onclick="toggleOnboardingEdit('role-edit-admin')">Abbrechen</button>
+            </div>
+          </form>
+        </div>
         {% for role in roles %}
         <div class="onboarding-list-item">
-          <span class="role-color-dot" style="background: {{ role['color'] }};"></span>
-          <span>{{ role['label'] }}</span>
-          <span class="muted" style="font-size:0.8rem;">{{ role['role_key'] }}</span>
+          <div class="onboarding-item-row">
+            <span class="role-color-dot" style="background: {{ role['color'] }};"></span>
+            <span>{{ role['label'] }}</span>
+            <span class="muted" style="font-size:0.8rem;">{{ role['role_key'] }}</span>
+            <div class="onboarding-item-actions">
+              <button type="button" class="ob-icon-btn" onclick="toggleOnboardingEdit('role-edit-{{ role['role_key'] }}')">&#9998;</button>
+              <form method="post">
+                <input type="hidden" name="action" value="delete-role">
+                <input type="hidden" name="active_tab" value="rollen">
+                <input type="hidden" name="role_key" value="{{ role['role_key'] }}">
+                <button type="submit" class="ob-icon-btn ob-icon-btn-danger" data-confirm="Rolle &#34;{{ role['label'] }}&#34; wirklich löschen?" onclick="return confirm(this.dataset.confirm)">&#10005;</button>
+              </form>
+            </div>
+          </div>
+          <form method="post" class="onboarding-edit-inline" id="role-edit-{{ role['role_key'] }}">
+            <input type="hidden" name="action" value="edit-role">
+            <input type="hidden" name="active_tab" value="rollen">
+            <input type="hidden" name="role_key" value="{{ role['role_key'] }}">
+            <label>Name<input type="text" name="role_label" value="{{ role['label'] }}" required></label>
+            <label>Farbe<input type="color" name="role_color" value="{{ role['color'] }}"></label>
+            <div class="onboarding-edit-actions">
+              <button type="submit" class="secondary small-btn">Speichern</button>
+              <button type="button" class="small-btn" onclick="toggleOnboardingEdit('role-edit-{{ role['role_key'] }}')">Abbrechen</button>
+            </div>
+          </form>
         </div>
         {% endfor %}
       </div>
-      {% else %}
-      <p class="muted onboarding-empty">Noch keine Rollen angelegt.</p>
-      {% endif %}
     </section>
 
     <!-- Benutzer -->
@@ -76,7 +114,7 @@
         <label>Benutzername
           <input type="text" name="username" maxlength="13" placeholder="z.B. mmeier" required>
         </label>
-        <label>Kürzel <small class="muted">(3 Z.)</small>
+        <label><span>Kürzel <small class="muted">(3 Z.)</small></span>
           <input type="text" name="initials" minlength="3" maxlength="3" placeholder="MME" required>
         </label>
         <label>Passwort
@@ -98,9 +136,41 @@
       <div class="onboarding-list">
         {% for u in users %}
         <div class="onboarding-list-item">
-          <span class="initial-badge {% if u['is_admin'] %}badge-admin{% else %}badge-role-{{ u['role'] }}{% endif %}">{{ u['initials'] }}</span>
-          <span>{{ u['username'] }}</span>
-          <span class="muted" style="font-size:0.8rem;">{% if u['is_admin'] %}Admin{% else %}{{ u['role'] }}{% endif %}</span>
+          <div class="onboarding-item-row">
+            <span class="initial-badge {% if u['is_admin'] %}badge-admin{% else %}badge-role-{{ u['role'] }}{% endif %}">{{ u['initials'] }}</span>
+            <span>{{ u['username'] }}</span>
+            <span class="muted" style="font-size:0.8rem;">{% if u['is_admin'] %}{{ admin_label }}{% else %}{{ u['role'] }}{% endif %}</span>
+            <div class="onboarding-item-actions">
+              <button type="button" class="ob-icon-btn" onclick="toggleOnboardingEdit('user-edit-{{ u['id'] }}')">&#9998;</button>
+              {% if u['id'] != user['id'] %}
+              <form method="post">
+                <input type="hidden" name="action" value="delete-user">
+                <input type="hidden" name="active_tab" value="benutzer">
+                <input type="hidden" name="user_id" value="{{ u['id'] }}">
+                <button type="submit" class="ob-icon-btn ob-icon-btn-danger" data-confirm="Benutzer &#34;{{ u['username'] }}&#34; wirklich löschen?" onclick="return confirm(this.dataset.confirm)">&#10005;</button>
+              </form>
+              {% endif %}
+            </div>
+          </div>
+          <form method="post" class="onboarding-edit-inline" id="user-edit-{{ u['id'] }}">
+            <input type="hidden" name="action" value="edit-user">
+            <input type="hidden" name="active_tab" value="benutzer">
+            <input type="hidden" name="user_id" value="{{ u['id'] }}">
+            <label>Benutzername<input type="text" name="username" value="{{ u['username'] }}" maxlength="13" required></label>
+            <label><span>Kürzel <small class="muted">(3 Z.)</small></span><input type="text" name="initials" value="{{ u['initials'] }}" minlength="3" maxlength="3" required></label>
+            <label>Rolle
+              <select name="role" {% if u['id'] == user['id'] %}disabled{% endif %}>
+                {% for opt in role_opts %}
+                <option value="{{ opt['value'] }}" {% if (u['is_admin'] and opt['value'] == 'admin') or (not u['is_admin'] and u['role'] == opt['value']) %}selected{% endif %}>{{ opt['label'] }}</option>
+                {% endfor %}
+              </select>
+              {% if u['id'] == user['id'] %}<input type="hidden" name="role" value="admin">{% endif %}
+            </label>
+            <div class="onboarding-edit-actions">
+              <button type="submit" class="secondary small-btn">Speichern</button>
+              <button type="button" class="small-btn" onclick="toggleOnboardingEdit('user-edit-{{ u['id'] }}')">Abbrechen</button>
+            </div>
+          </form>
         </div>
         {% endfor %}
       </div>
@@ -130,8 +200,29 @@
       <div class="onboarding-list">
         {% for cat in categories %}
         <div class="onboarding-list-item">
-          <span class="onboarding-cat-dot">&#9632;</span>
-          <span>{{ cat['label'] }}</span>
+          <div class="onboarding-item-row">
+            <span class="onboarding-cat-dot">&#9632;</span>
+            <span>{{ cat['label'] }}</span>
+            <div class="onboarding-item-actions">
+              <button type="button" class="ob-icon-btn" onclick="toggleOnboardingEdit('cat-edit-{{ cat['category_key'] }}')">&#9998;</button>
+              <form method="post">
+                <input type="hidden" name="action" value="delete-category">
+                <input type="hidden" name="active_tab" value="kategorien">
+                <input type="hidden" name="category_key" value="{{ cat['category_key'] }}">
+                <button type="submit" class="ob-icon-btn ob-icon-btn-danger" data-confirm="Kategorie &#34;{{ cat['label'] }}&#34; wirklich löschen?" onclick="return confirm(this.dataset.confirm)">&#10005;</button>
+              </form>
+            </div>
+          </div>
+          <form method="post" class="onboarding-edit-inline" id="cat-edit-{{ cat['category_key'] }}">
+            <input type="hidden" name="action" value="edit-category">
+            <input type="hidden" name="active_tab" value="kategorien">
+            <input type="hidden" name="category_key" value="{{ cat['category_key'] }}">
+            <label>Name<input type="text" name="category_label" value="{{ cat['label'] }}" required></label>
+            <div class="onboarding-edit-actions">
+              <button type="submit" class="secondary small-btn">Speichern</button>
+              <button type="button" class="small-btn" onclick="toggleOnboardingEdit('cat-edit-{{ cat['category_key'] }}')">Abbrechen</button>
+            </div>
+          </form>
         </div>
         {% endfor %}
       </div>
@@ -147,6 +238,13 @@
 </div>
 
 <script>
+  function toggleOnboardingEdit(id) {
+    const form = document.getElementById(id);
+    if (!form) return;
+    const isHidden = getComputedStyle(form).display === "none";
+    form.style.display = isHidden ? "flex" : "none";
+  }
+
   (() => {
     const tabs = document.querySelectorAll(".onboarding-tab");
     const panels = document.querySelectorAll(".onboarding-panel");

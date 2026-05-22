@@ -241,6 +241,7 @@ label {
   gap: 6px;
   font-weight: 600;
   color: #2d3748;
+  align-content: start;
 }
 
 body[data-theme="dark"] label {
@@ -1858,12 +1859,101 @@ td {
 
 .onboarding-list-item {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  flex-direction: column;
   background: var(--bg);
   border-radius: 8px;
   font-size: 0.9rem;
+  overflow: hidden;
+}
+
+.onboarding-item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+}
+
+.onboarding-item-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.onboarding-item-actions form {
+  display: flex;
+}
+
+.ob-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.ob-icon-btn:hover {
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--text);
+}
+
+.ob-icon-btn-danger:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+  color: #dc2626;
+}
+
+body[data-theme="dark"] .ob-icon-btn:hover {
+  background: #1e293b;
+}
+
+body[data-theme="dark"] .ob-icon-btn-danger:hover {
+  background: #3b0a0a;
+  border-color: #7f1d1d;
+  color: #f87171;
+}
+
+.onboarding-edit-inline {
+  display: none;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.onboarding-edit-inline label {
+  font-size: 0.82rem;
+  gap: 4px;
+}
+
+.onboarding-edit-inline input[type="text"],
+.onboarding-edit-inline input[type="color"],
+.onboarding-edit-inline select {
+  font-size: 0.85rem;
+  padding: 5px 8px;
+}
+
+.onboarding-edit-inline input[type="color"] {
+  padding: 2px 4px;
+  height: 32px;
+  width: 48px;
+}
+
+.onboarding-edit-actions {
+  display: flex;
+  gap: 6px;
+  align-self: end;
+  padding-bottom: 1px;
 }
 
 .onboarding-empty {

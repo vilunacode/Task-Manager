@@ -207,6 +207,7 @@ DEFAULT_APP_SETTINGS = {
     "new_task_highlight_seconds": "120",
     "overview_refresh_interval_seconds": "1",
     "role_color_admin": "#facc15",
+    "role_label_admin": "Admin",
     "new_task_tone": "classic",
 }
 
@@ -1713,6 +1714,160 @@ def onboarding():
             flash(f"Kategorie \"{category_label_input}\" wurde erstellt.", "success")
             return redirect(url_for("onboarding", tab=active_tab))
 
+        if action == "delete-role":
+            role_key = request.form.get("role_key", "").strip().lower()
+            if not role_key:
+                flash("Ungültige Rolle.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            existing = query_one("SELECT role_key, label FROM custom_roles WHERE role_key = ?", (role_key,))
+            if existing is None:
+                flash("Rolle nicht gefunden.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            usage = query_one("SELECT COUNT(*) AS cnt FROM users WHERE role = ?", (role_key,))
+            if usage and int(usage["cnt"]) > 0:
+                flash("Rolle kann nicht gelöscht werden, solange Benutzer dieser Rolle zugewiesen sind.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            execute("DELETE FROM custom_roles WHERE role_key = ?", (role_key,))
+            g.pop("custom_roles_map", None)
+            flash(f"Rolle \"{existing['label']}\" wurde entfernt.", "success")
+            return redirect(url_for("onboarding", tab=active_tab))
+
+        if action == "edit-admin-color":
+            role_color = request.form.get("role_color", "").strip()
+            role_label = request.form.get("role_label", "").strip()
+            if not is_hex_color(role_color):
+                flash("Farbe muss im Format #RRGGBB angegeben werden.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            if not role_label:
+                flash("Bitte einen Namen für die Admin-Rolle angeben.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            set_app_setting("role_color_admin", role_color)
+            set_app_setting("role_label_admin", role_label)
+            flash("Admin-Rolle wurde aktualisiert.", "success")
+            return redirect(url_for("onboarding", tab=active_tab))
+
+        if action == "edit-role":
+            role_key = request.form.get("role_key", "").strip().lower()
+            role_label = request.form.get("role_label", "").strip()
+            role_color = request.form.get("role_color", "").strip()
+            if not role_key or not role_label:
+                flash("Bitte einen Rollennamen angeben.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            if not is_hex_color(role_color):
+                flash("Farbe muss im Format #RRGGBB angegeben werden.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            existing = query_one("SELECT role_key FROM custom_roles WHERE role_key = ?", (role_key,))
+            if existing is None:
+                flash("Rolle nicht gefunden.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            conflict = query_one(
+                "SELECT role_key FROM custom_roles WHERE lower(label) = lower(?) AND role_key != ?",
+                (role_label, role_key),
+            )
+            if conflict:
+                flash("Eine Rolle mit diesem Namen existiert bereits.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            execute("UPDATE custom_roles SET label = ?, color = ? WHERE role_key = ?", (role_label, role_color, role_key))
+            g.pop("custom_roles_map", None)
+            flash("Rolle wurde aktualisiert.", "success")
+            return redirect(url_for("onboarding", tab=active_tab))
+
+        if action == "delete-user":
+            target_id = request.form.get("user_id", "").strip()
+            if not target_id:
+                flash("Ungültiger Benutzer.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            target = query_one("SELECT id, username FROM users WHERE id = ?", (target_id,))
+            if target is None:
+                flash("Benutzer nicht gefunden.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            if str(target["id"]) == str(user["id"]):
+                flash("Du kannst deinen eigenen Account nicht löschen.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            execute("DELETE FROM users WHERE id = ?", (target_id,))
+            flash(f"Benutzer \"{target['username']}\" wurde entfernt.", "success")
+            return redirect(url_for("onboarding", tab=active_tab))
+
+        if action == "edit-user":
+            target_id = request.form.get("user_id", "").strip()
+            new_username = request.form.get("username", "").strip()
+            new_initials = normalize_initials(request.form.get("initials", ""))
+            role_value = request.form.get("role", "").strip()
+            new_is_admin = 1 if role_value == "admin" else 0
+            new_role = "" if new_is_admin else normalize_role(role_value)
+
+            target = query_one("SELECT * FROM users WHERE id = ?", (target_id,))
+            if target is None:
+                flash("Benutzer nicht gefunden.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            if not new_username:
+                flash("Benutzername ist erforderlich.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            if len(new_username) > MAX_USERNAME_LENGTH:
+                flash(f"Benutzername darf maximal {MAX_USERNAME_LENGTH} Zeichen lang sein.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            if not new_initials:
+                flash("Kürzel muss genau 3 Zeichen (A-Z/0-9) lang sein.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            if not new_is_admin and not new_role:
+                flash("Bitte eine gültige Rolle auswählen.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            if str(target_id) == str(user["id"]) and not new_is_admin:
+                flash("Du kannst deinen eigenen Admin-Status nicht entfernen.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            if query_one("SELECT id FROM users WHERE username = ? AND id != ?", (new_username, target_id)):
+                flash("Benutzername ist bereits vergeben.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            if query_one("SELECT id FROM users WHERE initials = ? AND id != ?", (new_initials, target_id)):
+                flash("Dieses Kürzel ist bereits vergeben.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            execute(
+                "UPDATE users SET username = ?, initials = ?, is_admin = ?, role = ? WHERE id = ?",
+                (new_username, new_initials, new_is_admin, new_role, target_id),
+            )
+            flash("Benutzer wurde aktualisiert.", "success")
+            return redirect(url_for("onboarding", tab=active_tab))
+
+        if action == "delete-category":
+            category_key = request.form.get("category_key", "").strip().lower()
+            if not category_key:
+                flash("Ungültige Kategorie.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            existing = query_one("SELECT category_key, label FROM ticket_categories WHERE category_key = ?", (category_key,))
+            if existing is None:
+                flash("Kategorie nicht gefunden.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            usage = query_one("SELECT COUNT(*) AS cnt FROM tasks WHERE ticket_category = ?", (category_key,))
+            if usage and int(usage["cnt"]) > 0:
+                flash("Kategorie kann nicht gelöscht werden, solange Tasks dieser Kategorie zugewiesen sind.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            execute("DELETE FROM ticket_categories WHERE category_key = ?", (category_key,))
+            g.pop("ticket_categories", None)
+            flash(f"Kategorie \"{existing['label']}\" wurde entfernt.", "success")
+            return redirect(url_for("onboarding", tab=active_tab))
+
+        if action == "edit-category":
+            category_key = request.form.get("category_key", "").strip().lower()
+            new_label = request.form.get("category_label", "").strip()
+            if not category_key or not new_label:
+                flash("Bitte einen Kategorienamen angeben.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            existing = query_one("SELECT category_key FROM ticket_categories WHERE category_key = ?", (category_key,))
+            if existing is None:
+                flash("Kategorie nicht gefunden.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            conflict = query_one(
+                "SELECT category_key FROM ticket_categories WHERE lower(label) = lower(?) AND category_key != ?",
+                (new_label, category_key),
+            )
+            if conflict:
+                flash("Eine Kategorie mit diesem Namen existiert bereits.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            execute("UPDATE ticket_categories SET label = ? WHERE category_key = ?", (new_label, category_key))
+            g.pop("ticket_categories", None)
+            flash("Kategorie wurde aktualisiert.", "success")
+            return redirect(url_for("onboarding", tab=active_tab))
+
         return redirect(url_for("onboarding"))
 
     active_tab = request.args.get("tab", "rollen")
@@ -1722,6 +1877,9 @@ def onboarding():
     )
     categories = get_ticket_categories()
     role_opts = role_options()
+    settings = app_settings()
+    admin_color = settings.get("role_color_admin", "#facc15")
+    admin_label = settings.get("role_label_admin", "Admin")
 
     return render_template(
         "onboarding.html",
@@ -1731,6 +1889,8 @@ def onboarding():
         categories=categories,
         role_opts=role_opts,
         user=user,
+        admin_color=admin_color,
+        admin_label=admin_label,
     )
 
 
