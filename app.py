@@ -1656,6 +1656,9 @@ def onboarding():
             role_value = request.form.get("role", "").strip()
             is_admin = 1 if role_value == "admin" else 0
             role = "" if is_admin else normalize_role(role_value)
+            member_type = request.form.get("member_type", MEMBER_TYPE_REGULAR)
+            if member_type not in VALID_MEMBER_TYPES:
+                member_type = MEMBER_TYPE_REGULAR
 
             if not username or not password:
                 flash("Benutzername und Passwort sind erforderlich.", "error")
@@ -1686,7 +1689,7 @@ def onboarding():
                 INSERT INTO users (username, password_hash, is_admin, initials, role, member_type, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (username, generate_password_hash(password), is_admin, initials, role, MEMBER_TYPE_REGULAR, now_iso()),
+                (username, generate_password_hash(password), is_admin, initials, role, member_type, now_iso()),
             )
             flash(f"Benutzer \"{username}\" wurde angelegt.", "success")
             return redirect(url_for("onboarding", tab=active_tab))
@@ -1800,6 +1803,9 @@ def onboarding():
             role_value = request.form.get("role", "").strip()
             new_is_admin = 1 if role_value == "admin" else 0
             new_role = "" if new_is_admin else normalize_role(role_value)
+            new_member_type = request.form.get("member_type", MEMBER_TYPE_REGULAR)
+            if new_member_type not in VALID_MEMBER_TYPES:
+                new_member_type = MEMBER_TYPE_REGULAR
 
             target = query_one("SELECT * FROM users WHERE id = ?", (target_id,))
             if target is None:
@@ -1827,8 +1833,8 @@ def onboarding():
                 flash("Dieses Kürzel ist bereits vergeben.", "error")
                 return redirect(url_for("onboarding", tab=active_tab))
             execute(
-                "UPDATE users SET username = ?, initials = ?, is_admin = ?, role = ? WHERE id = ?",
-                (new_username, new_initials, new_is_admin, new_role, target_id),
+                "UPDATE users SET username = ?, initials = ?, is_admin = ?, role = ?, member_type = ? WHERE id = ?",
+                (new_username, new_initials, new_is_admin, new_role, new_member_type, target_id),
             )
             flash("Benutzer wurde aktualisiert.", "success")
             return redirect(url_for("onboarding", tab=active_tab))

@@ -127,7 +127,13 @@
             {% endfor %}
           </select>
         </label>
-        <div class="form-action-cell" style="grid-column: span 2;">
+        <label>Typ
+          <select name="member_type">
+            <option value="regular">Mitarbeiter</option>
+            <option value="trainee">Trainingsmitarbeiter</option>
+          </select>
+        </label>
+        <div class="form-action-cell">
           <button type="submit" class="secondary">Benutzer anlegen</button>
         </div>
       </form>
@@ -140,6 +146,7 @@
             <span class="initial-badge {% if u['is_admin'] %}badge-admin{% else %}badge-role-{{ u['role'] }}{% endif %}">{{ u['initials'] }}</span>
             <span>{{ u['username'] }}</span>
             <span class="muted" style="font-size:0.8rem;">{% if u['is_admin'] %}{{ admin_label }}{% else %}{{ u['role'] }}{% endif %}</span>
+            {% if not u['is_admin'] %}<span class="muted" style="font-size:0.8rem;">· {% if u['member_type'] == 'trainee' %}Trainingsmitarbeiter{% else %}Mitarbeiter{% endif %}</span>{% endif %}
             <div class="onboarding-item-actions">
               <button type="button" class="ob-icon-btn" onclick="toggleOnboardingEdit('user-edit-{{ u['id'] }}')">&#9998;</button>
               {% if u['id'] != user['id'] %}
@@ -165,6 +172,12 @@
                 {% endfor %}
               </select>
               {% if u['id'] == user['id'] %}<input type="hidden" name="role" value="admin">{% endif %}
+            </label>
+            <label>Typ
+              <select name="member_type">
+                <option value="regular" {% if u['member_type'] != 'trainee' %}selected{% endif %}>Mitarbeiter</option>
+                <option value="trainee" {% if u['member_type'] == 'trainee' %}selected{% endif %}>Trainingsmitarbeiter</option>
+              </select>
             </label>
             <div class="onboarding-edit-actions">
               <button type="submit" class="secondary small-btn">Speichern</button>
