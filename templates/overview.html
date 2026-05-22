@@ -185,11 +185,6 @@
       priorityCorner.textContent = String(priority);
       card.appendChild(priorityCorner);
 
-      const badge = document.createElement("span");
-      badge.className = "new-task-chip";
-      badge.textContent = "Neu";
-      card.appendChild(badge);
-
       const title = document.createElement("strong");
       title.textContent = task.title || "(Ohne Titel)";
       card.appendChild(title);
@@ -253,10 +248,6 @@
         hasFresh = true;
         card.classList.add("new-task-pop");
 
-        const badge = document.createElement("span");
-        badge.className = "new-task-chip";
-        badge.textContent = "Neu";
-        card.prepend(badge);
       }
 
       seen.add(taskId);

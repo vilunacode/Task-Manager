@@ -1486,14 +1486,17 @@ body[data-theme="dark"] .overview-task-card {
 }
 
 .new-task-chip {
-  display: inline-flex;
-  width: fit-content;
+  position: absolute;
+  top: 6px;
+  right: 6px;
   border-radius: 999px;
   padding: 2px 8px;
   background: #0f766e;
   color: #fff;
   font-size: 0.72rem;
   font-weight: 800;
+  z-index: 3;
+  pointer-events: none;
 }
 
 @keyframes popInTask {
