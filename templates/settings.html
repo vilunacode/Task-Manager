@@ -67,6 +67,11 @@
       </select>
     </label>
 
+    <div class="checkbox-label" style="grid-column: 1 / -1;">
+      <input type="checkbox" name="calendar_disabled" value="1" id="calendar_disabled" {{ 'checked' if settings['calendar_disabled'] == '1' else '' }}>
+      <label for="calendar_disabled" style="font-weight: normal;">Kalender deaktivieren <span class="muted">(für alle Benutzer außer Admins ausblenden)</span></label>
+    </div>
+
     <div class="actions-row">
       <button type="submit">Einstellungen speichern</button>
     </div>

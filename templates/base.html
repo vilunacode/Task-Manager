@@ -26,7 +26,9 @@
       <nav class="nav">
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
         <a href="{{ url_for('overview') }}">Übersicht</a>
+        {% if app_settings['calendar_disabled'] != '1' %}
         <a href="{{ url_for('calendar_page') }}">Kalender</a>
+        {% endif %}
         <a href="{{ url_for('settings_page') }}">Einstellungen</a>
         {% if user['is_admin'] %}
         <a href="{{ url_for('manage_users') }}">Benutzer</a>

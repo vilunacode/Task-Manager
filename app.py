@@ -209,6 +209,7 @@ DEFAULT_APP_SETTINGS = {
     "role_color_admin": "#facc15",
     "role_label_admin": "Admin",
     "new_task_tone": "classic",
+    "calendar_disabled": "0",
 }
 
 TONE_OPTIONS = {
@@ -2097,6 +2098,9 @@ def dashboard_tasks_api():
 @login_required
 def calendar_page():
     user = current_user()
+    if app_settings().get("calendar_disabled") == "1":
+        flash("Der Kalender ist derzeit deaktiviert.", "error")
+        return redirect(url_for("dashboard"))
 
     req_scope = request.args.get("scope", "me").strip().lower()
     req_filter_user = parse_int_value(request.args.get("user_id"))
@@ -2296,9 +2300,12 @@ def settings_page():
                 flash("Ungültige Ton-Auswahl.", "error")
                 return redirect(url_for("settings_page"))
 
+            calendar_disabled = "1" if request.form.get("calendar_disabled") == "1" else "0"
+
             set_app_setting("new_task_highlight_seconds", str(highlight_seconds))
             set_app_setting("overview_refresh_interval_seconds", str(refresh_seconds))
             set_app_setting("new_task_tone", new_task_tone)
+            set_app_setting("calendar_disabled", calendar_disabled)
 
             flash("Einstellungen wurden gespeichert.", "success")
             return redirect(url_for("settings_page"))
