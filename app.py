@@ -210,7 +210,11 @@ DEFAULT_APP_SETTINGS = {
     "role_label_admin": "Admin",
     "new_task_tone": "classic",
     "calendar_disabled": "0",
+    "favicon_filename": "",
 }
+
+FAVICON_ALLOWED_EXTENSIONS = {"ico", "png", "jpg", "jpeg", "svg"}
+FAVICON_MAX_BYTES = 2 * 1024 * 1024  # 2 MB
 
 TONE_OPTIONS = {
     "classic": {"type": "sine", "frequency": 880},
@@ -2374,6 +2378,54 @@ def settings_page():
             execute("DELETE FROM ticket_categories WHERE category_key = ?", (category_key,))
             g.pop("ticket_categories", None)
             flash("Kategorie wurde entfernt.", "success")
+            return redirect(url_for("settings_page"))
+
+        if action == "upload-favicon":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen das Favicon ändern.", "error")
+                return redirect(url_for("settings_page"))
+
+            file = request.files.get("favicon_file")
+            if not file or file.filename == "":
+                flash("Bitte eine Datei auswählen.", "error")
+                return redirect(url_for("settings_page"))
+
+            ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+            if ext not in FAVICON_ALLOWED_EXTENSIONS:
+                flash("Erlaubte Formate: ICO, PNG, JPG, SVG.", "error")
+                return redirect(url_for("settings_page"))
+
+            file.seek(0, 2)
+            size = file.tell()
+            file.seek(0)
+            if size > FAVICON_MAX_BYTES:
+                flash("Datei zu groß (max. 2 MB).", "error")
+                return redirect(url_for("settings_page"))
+
+            old_filename = app_settings().get("favicon_filename", "")
+            if old_filename:
+                old_path = os.path.join(app.static_folder, old_filename)
+                if os.path.exists(old_path):
+                    os.remove(old_path)
+
+            new_filename = f"favicon.{ext}"
+            file.save(os.path.join(app.static_folder, new_filename))
+            set_app_setting("favicon_filename", new_filename)
+            flash("Favicon wurde gespeichert.", "success")
+            return redirect(url_for("settings_page"))
+
+        if action == "delete-favicon":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen das Favicon entfernen.", "error")
+                return redirect(url_for("settings_page"))
+
+            filename = app_settings().get("favicon_filename", "")
+            if filename:
+                path = os.path.join(app.static_folder, filename)
+                if os.path.exists(path):
+                    os.remove(path)
+                set_app_setting("favicon_filename", "")
+                flash("Favicon wurde entfernt.", "success")
             return redirect(url_for("settings_page"))
 
         flash("Unbekannte Aktion.", "error")

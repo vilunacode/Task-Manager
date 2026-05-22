@@ -15,6 +15,11 @@
     }
     {% endfor %}
   </style>
+  {% if app_settings and app_settings['favicon_filename'] %}
+  <link rel="icon" href="{{ url_for('static', filename=app_settings['favicon_filename']) }}">
+  {% else %}
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
+  {% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body data-theme="{{ user['theme_mode'] if user and user['theme_mode'] in ('light', 'dark') else 'light' }}">
