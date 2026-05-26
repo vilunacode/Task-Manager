@@ -13,10 +13,11 @@ Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workf
 
 - Beim ersten Start Weiterleitung auf `/setup` zur Anlage des Admin-Accounts
 - Geführtes Onboarding (`/onboarding`) nach dem Setup:
-  - **Rollen**: Admin-Rolle (Name und Farbe konfigurierbar) sowie eigene Rollen erstellen, bearbeiten, löschen
+  - **Rollen**: Admin-Rolle (Name und Farbe konfigurierbar, Standard: `#fc5f5f`) sowie eigene Rollen erstellen, bearbeiten, löschen
   - **Benutzer**: Team-Accounts anlegen, bearbeiten, löschen
   - **Ticket-Kategorien**: Kategorien erstellen, bearbeiten, löschen
-- Onboarding kann jederzeit übersprungen oder erneut aufgerufen werden
+- Navigationsleiste während des Onboardings auf Dark/Light-Mode und Logout reduziert
+- Onboarding kann per „Überspringen" übersprungen oder jederzeit erneut aufgerufen werden
 
 ### Auth & Grundfunktionen
 
@@ -66,7 +67,7 @@ Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workf
 ### Benutzer, Rollen & Teamdarstellung
 
 - Rollenmodell:
-  - **Admin-Rolle**: immer vorhanden, Name und Farbe frei anpassbar
+  - **Admin-Rolle**: immer vorhanden, Name und Farbe frei anpassbar (Standard: `#fc5f5f`)
   - **Benutzerdefinierte Rollen**: vom Admin erstellt, mit eigener Farbe
 - Rollenverwaltung: erstellen, umbenennen, Farbe ändern, löschen
 - Benutzerverwaltung (anlegen, bearbeiten, löschen) mit Schutzlogik (z. B. letzter Admin)
@@ -90,10 +91,12 @@ Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workf
 
 - **Nutzer-Einstellungen**: Light/Dark Theme, Kartenansicht (kompakt/erweitert), Passwort ändern
 - **Admin-Einstellungen**:
+  - Admin-Rolle: Name und Farbe anpassen
   - Highlight-Dauer für neue Tasks in der Live-Übersicht
   - Live-Refresh-Intervall
   - Benachrichtigungston bei neuer Task
   - Ticket-Kategorien verwalten
+  - Favicon hochladen (ico, png, jpg, jpeg, svg — max. 2 MB)
 
 ## Technischer Stack
 
