@@ -110,6 +110,12 @@
           </svg>
         </a>
         <div class="archive-card-actions">
+          <form method="post" class="inline-form">
+            <input type="hidden" name="action" value="unarchive_task">
+            <input type="hidden" name="task_id" value="{{ task['id'] }}">
+            <input type="hidden" name="return_tab" value="archived">
+            <button type="submit" class="secondary small-btn">Aus Archiv zurücksetzen</button>
+          </form>
           <button
             type="button"
             class="danger small-btn"

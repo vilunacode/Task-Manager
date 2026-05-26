@@ -5,27 +5,6 @@
   <h1>Einstellungen</h1>
 </section>
 
-<section class="card">
-  <h2>Darstellung</h2>
-  <form method="post" class="form-grid two-columns">
-    <input type="hidden" name="action" value="theme">
-    <label>Modus
-      <select name="theme_mode" required>
-        <option value="light" {{ 'selected' if user['theme_mode'] == 'light' else '' }}>Standard</option>
-        <option value="dark" {{ 'selected' if user['theme_mode'] == 'dark' else '' }}>Dark</option>
-      </select>
-    </label>
-    <label>Taskkarten im Dashboard
-      <select name="card_view_mode" required>
-        <option value="compact" {{ 'selected' if user['card_view_mode'] == 'compact' else '' }}>Kompakt</option>
-        <option value="extended" {{ 'selected' if user['card_view_mode'] == 'extended' else '' }}>Erweitert</option>
-      </select>
-    </label>
-    <div class="actions-row">
-      <button type="submit">Darstellung speichern</button>
-    </div>
-  </form>
-</section>
 
 <section class="card">
   <h2>Passwort ändern</h2>

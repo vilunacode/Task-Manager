@@ -998,9 +998,12 @@ def sidebar_users():
             u.is_admin,
             u.is_inactive,
             u.member_type,
-            COUNT(ta.task_id) AS assigned_task_count
+            COUNT(t.id) AS assigned_task_count
         FROM users u
         LEFT JOIN task_assignees ta ON ta.user_id = u.id
+        LEFT JOIN tasks t ON t.id = ta.task_id
+            AND COALESCE(t.is_archived, 0) = 0
+            AND t.status IN ('open', 'in_progress')
         WHERE COALESCE(u.is_dashboard_invisible, 0) = 0
         GROUP BY u.id, u.username, u.initials, u.role, u.is_admin, u.is_inactive, u.member_type
         ORDER BY
@@ -1930,6 +1933,15 @@ def login():
     return render_template("login.html")
 
 
+@app.route("/toggle-theme", methods=["POST"])
+@login_required
+def toggle_theme():
+    user = current_user()
+    new_theme = THEME_DARK if user["theme_mode"] == THEME_LIGHT else THEME_LIGHT
+    execute("UPDATE users SET theme_mode = ? WHERE id = ?", (new_theme, user["id"]))
+    return redirect(request.referrer or url_for("dashboard"))
+
+
 @app.route("/logout", methods=["POST"])
 @login_required
 def logout():
@@ -2270,17 +2282,13 @@ def settings_page():
 
         if action == "theme":
             theme_mode = request.form.get("theme_mode", THEME_LIGHT).strip().lower()
-            card_view_mode = request.form.get("card_view_mode", CARD_VIEW_COMPACT).strip().lower()
             if theme_mode not in VALID_THEME_MODES:
                 flash("Ungültiger Modus ausgewählt.", "error")
                 return redirect(url_for("settings_page"))
-            if card_view_mode not in VALID_CARD_VIEW_MODES:
-                flash("Ungültige Kartenansicht ausgewählt.", "error")
-                return redirect(url_for("settings_page"))
 
             execute(
-                "UPDATE users SET theme_mode = ?, card_view_mode = ? WHERE id = ?",
-                (theme_mode, card_view_mode, user["id"]),
+                "UPDATE users SET theme_mode = ? WHERE id = ?",
+                (theme_mode, user["id"]),
             )
             flash("Darstellung wurde gespeichert.", "success")
             return redirect(url_for("settings_page"))
@@ -3660,6 +3668,18 @@ def archive():
             log_event(user, "task_archived", "Task archiviert", task_id=int(task_id_raw), task_title=task["title"])
             flash("Task wurde archiviert.", "success")
             return redirect(url_for("archive", tab="closed"))
+
+        if action == "unarchive_task":
+            if not task["is_archived"]:
+                flash("Dieser Task ist nicht archiviert.", "error")
+                return redirect(url_for("archive", tab="archived"))
+            execute(
+                "UPDATE tasks SET is_archived = 0, updated_at = ? WHERE id = ?",
+                (now_iso(), task_id_raw),
+            )
+            log_event(user, "task_unarchived", "Task aus Archiv zurückgesetzt", task_id=int(task_id_raw), task_title=task["title"])
+            flash("Task wurde aus dem Archiv zurückgesetzt.", "success")
+            return redirect(url_for("archive", tab="archived"))
 
         if action == "delete":
             log_event(user, "task_deleted", "Task gelöscht", task_id=int(task_id_raw), task_title=task["title"])
