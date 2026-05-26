@@ -206,7 +206,7 @@ DEFAULT_TASK_PRIORITY = 3
 DEFAULT_APP_SETTINGS = {
     "new_task_highlight_seconds": "120",
     "overview_refresh_interval_seconds": "1",
-    "role_color_admin": "#facc15",
+    "role_color_admin": "#fc5f5f",
     "role_label_admin": "Admin",
     "new_task_tone": "classic",
     "calendar_disabled": "0",
@@ -844,7 +844,8 @@ def get_ticket_categories():
 
 
 def role_options() -> list[dict[str, str]]:
-    options = [{"value": "admin", "label": "Admin"}]
+    admin_label = app_settings().get("role_label_admin", "Admin")
+    options = [{"value": "admin", "label": admin_label}]
     for role in active_custom_roles():
         options.append({"value": role["role_key"], "label": role["label"]})
     return options

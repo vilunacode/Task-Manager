@@ -47,6 +47,7 @@
       {% endif %}
       {% if user %}
       <nav class="nav">
+        {% block nav_links %}
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
         <a href="{{ url_for('overview') }}">Übersicht</a>
         {% if app_settings['calendar_disabled'] != '1' %}
@@ -62,6 +63,7 @@
           {% endif %}
         </a>
         {% endif %}
+        {% endblock %}
         <form method="post" action="{{ url_for('toggle_theme') }}" class="theme-toggle-form">
           <button type="submit" class="theme-toggle" title="Dark/Light Mode wechseln" aria-label="Theme wechseln">
             <span class="theme-toggle-track">

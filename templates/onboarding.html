@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% block title %}Einrichtung | Task Manager{% endblock %}
+{% block nav_links %}{% endblock %}
 {% block content %}
 <div class="onboarding-page">
 
@@ -9,7 +10,7 @@
         <h1>Einrichtung</h1>
         <p class="muted">Richte Rollen, Benutzer und Kategorien ein, bevor du loslegst — oder überspringe diesen Schritt und fange direkt an.</p>
       </div>
-      <a href="{{ url_for('dashboard') }}" class="btn-finish">Zum Dashboard &rarr;</a>
+      <a href="{{ url_for('dashboard') }}" class="btn-finish">Überspringen <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></a>
     </div>
   </section>
 
@@ -82,7 +83,7 @@
                 <input type="hidden" name="action" value="delete-role">
                 <input type="hidden" name="active_tab" value="rollen">
                 <input type="hidden" name="role_key" value="{{ role['role_key'] }}">
-                <button type="submit" class="ob-icon-btn ob-icon-btn-danger" data-confirm="Rolle &#34;{{ role['label'] }}&#34; wirklich löschen?" onclick="return confirm(this.dataset.confirm)">&#10005;</button>
+                <button type="button" class="ob-icon-btn ob-icon-btn-danger" data-title="Rolle entfernen" data-confirm="Soll die Rolle &#34;{{ role['label'] }}&#34; wirklich entfernt werden?" onclick="obConfirm(this)">&#10005;</button>
               </form>
             </div>
           </div>
@@ -154,7 +155,7 @@
                 <input type="hidden" name="action" value="delete-user">
                 <input type="hidden" name="active_tab" value="benutzer">
                 <input type="hidden" name="user_id" value="{{ u['id'] }}">
-                <button type="submit" class="ob-icon-btn ob-icon-btn-danger" data-confirm="Benutzer &#34;{{ u['username'] }}&#34; wirklich löschen?" onclick="return confirm(this.dataset.confirm)">&#10005;</button>
+                <button type="button" class="ob-icon-btn ob-icon-btn-danger" data-title="Benutzer entfernen" data-confirm="Soll der Benutzer &#34;{{ u['username'] }}&#34; wirklich entfernt werden?" onclick="obConfirm(this)">&#10005;</button>
               </form>
               {% endif %}
             </div>
@@ -222,7 +223,7 @@
                 <input type="hidden" name="action" value="delete-category">
                 <input type="hidden" name="active_tab" value="kategorien">
                 <input type="hidden" name="category_key" value="{{ cat['category_key'] }}">
-                <button type="submit" class="ob-icon-btn ob-icon-btn-danger" data-confirm="Kategorie &#34;{{ cat['label'] }}&#34; wirklich löschen?" onclick="return confirm(this.dataset.confirm)">&#10005;</button>
+                <button type="button" class="ob-icon-btn ob-icon-btn-danger" data-title="Kategorie entfernen" data-confirm="Soll die Kategorie &#34;{{ cat['label'] }}&#34; wirklich entfernt werden?" onclick="obConfirm(this)">&#10005;</button>
               </form>
             </div>
           </div>
@@ -246,9 +247,21 @@
   </div>
 
   <div class="onboarding-footer">
-    <a href="{{ url_for('dashboard') }}" class="btn-finish-footer">Einrichtung abschließen &rarr;</a>
+    <a href="{{ url_for('dashboard') }}" class="btn-finish-footer">Einrichtung abschließen <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg></a>
   </div>
 </div>
+
+<dialog class="task-dialog confirm-dialog-small" id="ob-confirm-dialog">
+  <div class="dialog-head">
+    <strong id="ob-confirm-title"></strong>
+    <button type="button" class="link-btn" id="ob-confirm-close">&#10005;</button>
+  </div>
+  <p class="muted" id="ob-confirm-msg" style="margin: 10px 0 18px; line-height: 1.5;"></p>
+  <div class="compact-actions">
+    <button type="button" class="danger" id="ob-confirm-ok">Ja, entfernen</button>
+    <button type="button" class="secondary" id="ob-confirm-cancel">Abbrechen</button>
+  </div>
+</dialog>
 
 <script>
   function toggleOnboardingEdit(id) {
@@ -257,6 +270,41 @@
     const isHidden = getComputedStyle(form).display === "none";
     form.style.display = isHidden ? "flex" : "none";
   }
+
+  (function () {
+    const dialog = document.getElementById("ob-confirm-dialog");
+    const title = document.getElementById("ob-confirm-title");
+    const msg = document.getElementById("ob-confirm-msg");
+    const closeBtn = document.getElementById("ob-confirm-close");
+    const cancelBtn = document.getElementById("ob-confirm-cancel");
+    const okBtn = document.getElementById("ob-confirm-ok");
+    let pendingForm = null;
+
+    window.obConfirm = function (btn) {
+      pendingForm = btn.closest("form");
+      title.textContent = btn.dataset.title || "Entfernen";
+      msg.textContent = btn.dataset.confirm;
+      dialog.showModal();
+    };
+
+    dialog.addEventListener("close", function () {
+      pendingForm = null;
+    });
+
+    closeBtn.addEventListener("click", function () { dialog.close(); });
+    cancelBtn.addEventListener("click", function () { dialog.close(); });
+
+    dialog.addEventListener("click", function (e) {
+      const rect = dialog.getBoundingClientRect();
+      if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+        dialog.close();
+      }
+    });
+
+    okBtn.addEventListener("click", function () {
+      if (pendingForm) pendingForm.submit();
+    });
+  })();
 
   (() => {
     const tabs = document.querySelectorAll(".onboarding-tab");
