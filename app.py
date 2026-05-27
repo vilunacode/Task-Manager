@@ -4,6 +4,13 @@ import configparser
 import re
 import sqlite3
 from urllib.parse import quote_plus
+
+try:
+    import pymysql
+    import pymysql.cursors
+    import pymysql.err
+except ImportError:
+    pymysql = None
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from zoneinfo import ZoneInfo
@@ -20,6 +27,46 @@ from flask import (
     url_for,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
+
+class DbWrapper:
+    """Thin wrapper that normalises SQLite and MySQL into a single API."""
+
+    _CONFLICT_RE = re.compile(
+        r"ON CONFLICT\s*\([^)]+\)\s*DO UPDATE SET\s+(\w+)\s*=\s*excluded\.(\w+)",
+        re.IGNORECASE,
+    )
+
+    def __init__(self, conn, backend: str):
+        self._conn = conn
+        self._backend = backend
+
+    def _adapt(self, sql: str) -> str:
+        if self._backend != "mysql":
+            return sql
+        sql = sql.replace("INSERT OR IGNORE", "INSERT IGNORE")
+        sql = self._CONFLICT_RE.sub(r"ON DUPLICATE KEY UPDATE \1 = VALUES(\2)", sql)
+        sql = sql.replace("?", "%s")
+        return sql
+
+    def execute(self, sql: str, params=()):
+        cursor = self._conn.cursor()
+        cursor.execute(self._adapt(sql), params)
+        return cursor
+
+    def executemany(self, sql: str, params_list):
+        cursor = self._conn.cursor()
+        cursor.executemany(self._adapt(sql), params_list)
+        return cursor
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        self._conn.close()
+
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 DEFAULT_CONFIG_FILENAME = "config.ini"
@@ -186,6 +233,11 @@ def load_runtime_config(base_dir: str) -> dict:
         "database_driver": database_config["driver"],
         "database_path": database_config["path"],
         "database_url": database_config["url"],
+        "database_host": database_config["host"],
+        "database_port": database_config["port"],
+        "database_name": database_config["name"],
+        "database_username": database_config["username"],
+        "database_password": database_config["password"],
         "config_file_path": config_file_path,
     }
 
@@ -246,19 +298,52 @@ except Exception:  # pylint: disable=broad-except
     APP_TIMEZONE = ZoneInfo("Europe/Berlin")
 
 
-def get_db() -> sqlite3.Connection:
-    if RUNTIME_CONFIG["database_backend"] != "sqlite":
-        raise RuntimeError(
-            "Externe Datenbanken sind in dieser Version noch nicht direkt unterstützt. "
-            "Bitte 'database.driver = sqlite' nutzen."
-        )
+def get_db() -> DbWrapper:
     if "db" not in g:
-        db_dir = os.path.dirname(os.path.abspath(DATABASE))
-        os.makedirs(db_dir, exist_ok=True)
-        conn = sqlite3.connect(DATABASE)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        g.db = conn
+        backend = RUNTIME_CONFIG["database_backend"]
+        if backend == "sqlite":
+            db_dir = os.path.dirname(os.path.abspath(DATABASE))
+            os.makedirs(db_dir, exist_ok=True)
+            conn = sqlite3.connect(DATABASE)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
+            g.db = DbWrapper(conn, "sqlite")
+        else:
+            if pymysql is None:
+                raise RuntimeError("PyMySQL ist nicht installiert. Bitte 'pip install PyMySQL' ausführen.")
+            cfg = RUNTIME_CONFIG
+            db_host = cfg["database_host"] or "127.0.0.1"
+            db_port = int(cfg["database_port"] or 3306)
+            db_name = cfg["database_name"] or "task_manager"
+            db_user = cfg["database_username"] or ""
+            db_pass = cfg["database_password"] or ""
+            connect_args = dict(
+                host=db_host,
+                port=db_port,
+                user=db_user,
+                password=db_pass,
+                charset="utf8mb4",
+                cursorclass=pymysql.cursors.DictCursor,
+                autocommit=False,
+            )
+            try:
+                conn = pymysql.connect(database=db_name, **connect_args)
+            except pymysql.err.OperationalError as exc:
+                if exc.args[0] != 1049:
+                    raise
+                # Database does not exist yet — create it.
+                bootstrap = pymysql.connect(**connect_args)
+                try:
+                    with bootstrap.cursor() as cur:
+                        cur.execute(
+                            f"CREATE DATABASE IF NOT EXISTS `{db_name}` "
+                            "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+                        )
+                    bootstrap.commit()
+                finally:
+                    bootstrap.close()
+                conn = pymysql.connect(database=db_name, **connect_args)
+            g.db = DbWrapper(conn, "mysql")
     return g.db
 
 
@@ -272,159 +357,296 @@ def close_db(exception):  # pylint: disable=unused-argument
 @app.before_request
 def auto_reinit_db_if_missing():
     db = get_db()
-    if db.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
-    ).fetchone() is None:
+    if RUNTIME_CONFIG["database_backend"] == "sqlite":
+        exists = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
+        ).fetchone()
+    else:
+        exists = db.execute(
+            "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
+            "WHERE TABLE_NAME = 'users' AND TABLE_SCHEMA = DATABASE()"
+        ).fetchone()
+    if exists is None:
         init_db()
+
+
+_SQLITE_SCHEMA_STMTS = [
+    """CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        is_admin INTEGER NOT NULL DEFAULT 0,
+        initials TEXT,
+        role TEXT,
+        created_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 3,
+        assignee_id INTEGER,
+        due_date TEXT,
+        contact_person TEXT NOT NULL,
+        created_by INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL,
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+    )""",
+    """CREATE TABLE IF NOT EXISTS task_assignees (
+        task_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        PRIMARY KEY (task_id, user_id),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""",
+    """CREATE TABLE IF NOT EXISTS task_comments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT,
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""",
+    """CREATE TABLE IF NOT EXISTS task_comment_mentions (
+        comment_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (comment_id, user_id),
+        FOREIGN KEY (comment_id) REFERENCES task_comments(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""",
+    """CREATE TABLE IF NOT EXISTS user_ping_reads (
+        user_id INTEGER NOT NULL,
+        comment_id INTEGER NOT NULL,
+        read_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, comment_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (comment_id) REFERENCES task_comments(id) ON DELETE CASCADE
+    )""",
+    """CREATE TABLE IF NOT EXISTS app_settings (
+        `key` TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS calendar_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        start_at TEXT NOT NULL,
+        end_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""",
+    """CREATE TABLE IF NOT EXISTS custom_roles (
+        role_key TEXT PRIMARY KEY,
+        label TEXT NOT NULL UNIQUE,
+        color TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS disabled_roles (
+        role_key TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS ticket_categories (
+        category_key TEXT PRIMARY KEY,
+        label TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS activity_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        actor_id INTEGER,
+        actor_name TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        description TEXT NOT NULL,
+        task_id INTEGER,
+        task_title TEXT,
+        details TEXT,
+        created_at TEXT NOT NULL
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_task_assignees_user ON task_assignees(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_task_assignees_task ON task_assignees(task_id)",
+    "CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)",
+    "CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_user_ping_reads_user ON user_ping_reads(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_calendar_events_user ON calendar_events(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at DESC)",
+]
+
+_MYSQL_SCHEMA_STMTS = [
+    """CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        username VARCHAR(255) NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        is_admin TINYINT NOT NULL DEFAULT 0,
+        initials VARCHAR(10),
+        role VARCHAR(255),
+        created_at VARCHAR(50) NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS tasks (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        priority INT NOT NULL DEFAULT 3,
+        assignee_id INT,
+        due_date VARCHAR(50),
+        contact_person TEXT NOT NULL,
+        created_by INT NOT NULL,
+        status VARCHAR(50) NOT NULL,
+        created_at VARCHAR(50) NOT NULL,
+        updated_at VARCHAR(50) NOT NULL,
+        FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL,
+        FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
+    )""",
+    """CREATE TABLE IF NOT EXISTS task_assignees (
+        task_id INT NOT NULL,
+        user_id INT NOT NULL,
+        PRIMARY KEY (task_id, user_id),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""",
+    """CREATE TABLE IF NOT EXISTS task_comments (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        task_id INT NOT NULL,
+        user_id INT NOT NULL,
+        content TEXT NOT NULL,
+        created_at VARCHAR(50) NOT NULL,
+        updated_at VARCHAR(50),
+        FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""",
+    """CREATE TABLE IF NOT EXISTS task_comment_mentions (
+        comment_id INT NOT NULL,
+        user_id INT NOT NULL,
+        created_at VARCHAR(50) NOT NULL,
+        PRIMARY KEY (comment_id, user_id),
+        FOREIGN KEY (comment_id) REFERENCES task_comments(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""",
+    """CREATE TABLE IF NOT EXISTS user_ping_reads (
+        user_id INT NOT NULL,
+        comment_id INT NOT NULL,
+        read_at VARCHAR(50) NOT NULL,
+        PRIMARY KEY (user_id, comment_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (comment_id) REFERENCES task_comments(id) ON DELETE CASCADE
+    )""",
+    """CREATE TABLE IF NOT EXISTS app_settings (
+        `key` VARCHAR(255) NOT NULL,
+        value TEXT NOT NULL,
+        PRIMARY KEY (`key`)
+    )""",
+    """CREATE TABLE IF NOT EXISTS calendar_events (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        title TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        start_at VARCHAR(50) NOT NULL,
+        end_at VARCHAR(50),
+        created_at VARCHAR(50) NOT NULL,
+        updated_at VARCHAR(50) NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )""",
+    """CREATE TABLE IF NOT EXISTS custom_roles (
+        role_key VARCHAR(255) NOT NULL,
+        label VARCHAR(255) NOT NULL UNIQUE,
+        color VARCHAR(20) NOT NULL,
+        created_at VARCHAR(50) NOT NULL,
+        PRIMARY KEY (role_key)
+    )""",
+    """CREATE TABLE IF NOT EXISTS disabled_roles (
+        role_key VARCHAR(255) NOT NULL,
+        created_at VARCHAR(50) NOT NULL,
+        PRIMARY KEY (role_key)
+    )""",
+    """CREATE TABLE IF NOT EXISTS ticket_categories (
+        category_key VARCHAR(255) NOT NULL,
+        label VARCHAR(255) NOT NULL UNIQUE,
+        created_at VARCHAR(50) NOT NULL,
+        PRIMARY KEY (category_key)
+    )""",
+    """CREATE TABLE IF NOT EXISTS activity_log (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        actor_id INT,
+        actor_name TEXT NOT NULL,
+        event_type VARCHAR(100) NOT NULL,
+        description TEXT NOT NULL,
+        task_id INT,
+        task_title TEXT,
+        details TEXT,
+        created_at VARCHAR(50) NOT NULL
+    )""",
+]
+
+_MYSQL_INDEX_STMTS = [
+    "CREATE INDEX idx_task_assignees_user ON task_assignees(user_id)",
+    "CREATE INDEX idx_task_assignees_task ON task_assignees(task_id)",
+    "CREATE INDEX idx_task_comments_task ON task_comments(task_id)",
+    "CREATE INDEX idx_tasks_status ON tasks(status)",
+    "CREATE INDEX idx_tasks_updated_at ON tasks(updated_at)",
+    "CREATE INDEX idx_user_ping_reads_user ON user_ping_reads(user_id)",
+    "CREATE INDEX idx_calendar_events_user ON calendar_events(user_id)",
+    "CREATE INDEX idx_activity_log_created ON activity_log(created_at)",
+]
+
+
+def _table_columns(db: DbWrapper, table: str) -> set:
+    if RUNTIME_CONFIG["database_backend"] == "sqlite":
+        rows = db.execute(f"PRAGMA table_info({table})").fetchall()
+        return {row["name"] for row in rows}
+    rows = db.execute(f"SHOW COLUMNS FROM `{table}`").fetchall()
+    return {row["Field"] for row in rows}
 
 
 def init_db() -> None:
     db = get_db()
-    db.executescript(
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            is_admin INTEGER NOT NULL DEFAULT 0,
-            initials TEXT,
-            role TEXT,
-            created_at TEXT NOT NULL
-        );
+    backend = RUNTIME_CONFIG["database_backend"]
 
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            description TEXT NOT NULL,
-            priority INTEGER NOT NULL DEFAULT 3,
-            assignee_id INTEGER,
-            due_date TEXT,
-            contact_person TEXT NOT NULL,
-            created_by INTEGER NOT NULL,
-            status TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY (assignee_id) REFERENCES users(id) ON DELETE SET NULL,
-            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE RESTRICT
-        );
+    if backend == "sqlite":
+        for stmt in _SQLITE_SCHEMA_STMTS:
+            db.execute(stmt)
+    else:
+        for stmt in _MYSQL_SCHEMA_STMTS:
+            db.execute(stmt)
+            db.commit()
+        for stmt in _MYSQL_INDEX_STMTS:
+            try:
+                db.execute(stmt)
+                db.commit()
+            except pymysql.err.OperationalError as exc:
+                if exc.args[0] == 1061:  # Duplicate key name — index already exists
+                    db.rollback()
+                else:
+                    raise
 
-        CREATE TABLE IF NOT EXISTS task_assignees (
-            task_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            PRIMARY KEY (task_id, user_id),
-            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS task_comments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            content TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT,
-            FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS task_comment_mentions (
-            comment_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            created_at TEXT NOT NULL,
-            PRIMARY KEY (comment_id, user_id),
-            FOREIGN KEY (comment_id) REFERENCES task_comments(id) ON DELETE CASCADE,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS user_ping_reads (
-            user_id INTEGER NOT NULL,
-            comment_id INTEGER NOT NULL,
-            read_at TEXT NOT NULL,
-            PRIMARY KEY (user_id, comment_id),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-            FOREIGN KEY (comment_id) REFERENCES task_comments(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS app_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS calendar_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            title TEXT NOT NULL,
-            notes TEXT NOT NULL DEFAULT '',
-            start_at TEXT NOT NULL,
-            end_at TEXT,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS custom_roles (
-            role_key TEXT PRIMARY KEY,
-            label TEXT NOT NULL UNIQUE,
-            color TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS disabled_roles (
-            role_key TEXT PRIMARY KEY,
-            created_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS ticket_categories (
-            category_key TEXT PRIMARY KEY,
-            label TEXT NOT NULL UNIQUE,
-            created_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS activity_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            actor_id INTEGER,
-            actor_name TEXT NOT NULL,
-            event_type TEXT NOT NULL,
-            description TEXT NOT NULL,
-            task_id INTEGER,
-            task_title TEXT,
-            details TEXT,
-            created_at TEXT NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_task_assignees_user ON task_assignees(user_id);
-        CREATE INDEX IF NOT EXISTS idx_task_assignees_task ON task_assignees(task_id);
-        CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);
-        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-        CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at);
-        CREATE INDEX IF NOT EXISTS idx_user_ping_reads_user ON user_ping_reads(user_id);
-        CREATE INDEX IF NOT EXISTS idx_calendar_events_user ON calendar_events(user_id);
-        CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at DESC);
-        """
-    )
-
-    # Ensure migrations for existing databases.
-    columns = {row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()}
+    # Migrations for existing databases.
+    columns = _table_columns(db, "users")
     if "initials" not in columns:
         db.execute("ALTER TABLE users ADD COLUMN initials TEXT")
     if "role" not in columns:
         db.execute("ALTER TABLE users ADD COLUMN role TEXT")
     if "theme_mode" not in columns:
-        db.execute(f"ALTER TABLE users ADD COLUMN theme_mode TEXT NOT NULL DEFAULT '{THEME_LIGHT}'")
+        db.execute(f"ALTER TABLE users ADD COLUMN theme_mode VARCHAR(50) NOT NULL DEFAULT '{THEME_LIGHT}'")
     if "card_view_mode" not in columns:
         db.execute(
-            f"ALTER TABLE users ADD COLUMN card_view_mode TEXT NOT NULL DEFAULT '{CARD_VIEW_COMPACT}'"
+            f"ALTER TABLE users ADD COLUMN card_view_mode VARCHAR(50) NOT NULL DEFAULT '{CARD_VIEW_COMPACT}'"
         )
     if "last_seen_ping_at" not in columns:
         db.execute("ALTER TABLE users ADD COLUMN last_seen_ping_at TEXT")
     if "is_inactive" not in columns:
         db.execute("ALTER TABLE users ADD COLUMN is_inactive INTEGER NOT NULL DEFAULT 0")
     if "member_type" not in columns:
-        db.execute(f"ALTER TABLE users ADD COLUMN member_type TEXT NOT NULL DEFAULT '{MEMBER_TYPE_REGULAR}'")
+        db.execute(f"ALTER TABLE users ADD COLUMN member_type VARCHAR(50) NOT NULL DEFAULT '{MEMBER_TYPE_REGULAR}'")
     if "is_dashboard_invisible" not in columns:
         db.execute("ALTER TABLE users ADD COLUMN is_dashboard_invisible INTEGER NOT NULL DEFAULT 0")
 
-    task_columns = {row["name"] for row in db.execute("PRAGMA table_info(tasks)").fetchall()}
+    task_columns = _table_columns(db, "tasks")
     if "due_date" not in task_columns:
         db.execute("ALTER TABLE tasks ADD COLUMN due_date TEXT")
     if "close_reason" not in task_columns:
@@ -436,7 +658,7 @@ def init_db() -> None:
     if "contact_person_user_id" not in task_columns:
         db.execute("ALTER TABLE tasks ADD COLUMN contact_person_user_id INTEGER")
     if "ticket_category" not in task_columns:
-        db.execute("ALTER TABLE tasks ADD COLUMN ticket_category TEXT NOT NULL DEFAULT 'other'")
+        db.execute("ALTER TABLE tasks ADD COLUMN ticket_category VARCHAR(100) NOT NULL DEFAULT 'other'")
     if "room" not in task_columns:
         db.execute("ALTER TABLE tasks ADD COLUMN room TEXT")
     if "priority" not in task_columns:
@@ -444,7 +666,7 @@ def init_db() -> None:
     if "is_archived" not in task_columns:
         db.execute("ALTER TABLE tasks ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
 
-    comment_columns = {row["name"] for row in db.execute("PRAGMA table_info(task_comments)").fetchall()}
+    comment_columns = _table_columns(db, "task_comments")
     if "updated_at" not in comment_columns:
         db.execute("ALTER TABLE task_comments ADD COLUMN updated_at TEXT")
 
@@ -562,7 +784,7 @@ def init_db() -> None:
 
     for key, value in DEFAULT_APP_SETTINGS.items():
         db.execute(
-            "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO app_settings (`key`, value) VALUES (?, ?)",
             (key, value),
         )
 
@@ -623,7 +845,7 @@ def app_settings() -> dict[str, str]:
     if "app_settings" not in g:
         stored = {
             row["key"]: row["value"]
-            for row in query_all("SELECT key, value FROM app_settings")
+            for row in query_all("SELECT `key`, value FROM app_settings")
         }
         merged = dict(DEFAULT_APP_SETTINGS)
         merged.update(stored)
@@ -634,9 +856,9 @@ def app_settings() -> dict[str, str]:
 def set_app_setting(key: str, value: str) -> None:
     execute(
         """
-        INSERT INTO app_settings (key, value)
+        INSERT INTO app_settings (`key`, value)
         VALUES (?, ?)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        ON CONFLICT(`key`) DO UPDATE SET value = excluded.value
         """,
         (key, value),
     )
