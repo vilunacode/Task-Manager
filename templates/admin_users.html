@@ -6,7 +6,7 @@
   <form method="post" class="form-grid two-columns">
     <input type="hidden" name="action" value="create">
     <label>Benutzername
-      <input type="text" name="username" maxlength="13" required>
+      <input type="text" name="username" maxlength="25" required>
     </label>
     <label>Kürzel (3 Zeichen)
       <input type="text" name="initials" minlength="3" maxlength="3" required>
@@ -104,7 +104,7 @@
                 <input type="hidden" name="action" value="update">
                 <input type="hidden" name="user_id" value="{{ account['id'] }}">
                 <label>Benutzername
-                  <input type="text" name="username" value="{{ account['username'] }}" maxlength="13" required>
+                  <input type="text" name="username" value="{{ account['username'] }}" maxlength="25" required>
                 </label>
                 <label>Kürzel
                   <input type="text" name="initials" minlength="3" maxlength="3" value="{{ account['initials'] }}" required>

@@ -139,7 +139,7 @@
         <input type="hidden" name="action" value="create-user">
         <input type="hidden" name="active_tab" value="benutzer">
         <label>Benutzername
-          <input type="text" name="username" maxlength="13" placeholder="z.B. mmeier" required>
+          <input type="text" name="username" maxlength="25" placeholder="z.B. mmeier" required>
         </label>
         <label><span>Kürzel <small class="muted">(3 Z.)</small></span>
           <input type="text" name="initials" minlength="3" maxlength="3" placeholder="MME" required>
@@ -190,7 +190,7 @@
             <input type="hidden" name="action" value="edit-user">
             <input type="hidden" name="active_tab" value="benutzer">
             <input type="hidden" name="user_id" value="{{ u['id'] }}">
-            <label>Benutzername<input type="text" name="username" value="{{ u['username'] }}" maxlength="13" required></label>
+            <label>Benutzername<input type="text" name="username" value="{{ u['username'] }}" maxlength="25" required></label>
             <label><span>Kürzel <small class="muted">(3 Z.)</small></span><input type="text" name="initials" value="{{ u['initials'] }}" minlength="3" maxlength="3" required></label>
             <label>Rolle
               <select name="role" {% if u['id'] == user['id'] %}disabled{% endif %}>
