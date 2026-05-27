@@ -3461,9 +3461,21 @@ def manage_users():
                 flash("Benutzer-Rolle wurde aktualisiert.", "success")
                 return redirect(url_for("manage_users"))
 
+            if not role_label_upd:
+                flash("Bitte einen Rollennamen angeben.", "error")
+                return redirect(url_for("manage_users"))
+
             existing = query_one("SELECT role_key, is_admin FROM custom_roles WHERE role_key = ?", (role_key,))
             if existing is None:
                 flash("Rolle nicht gefunden.", "error")
+                return redirect(url_for("manage_users"))
+
+            conflict = query_one(
+                "SELECT role_key FROM custom_roles WHERE lower(label) = lower(?) AND role_key != ?",
+                (role_label_upd, role_key),
+            )
+            if conflict:
+                flash("Eine Rolle mit diesem Namen existiert bereits.", "error")
                 return redirect(url_for("manage_users"))
 
             if int(existing["is_admin"]) == 1 and role_is_admin == 0:
@@ -3478,8 +3490,8 @@ def manage_users():
                         return redirect(url_for("manage_users"))
 
             execute(
-                "UPDATE custom_roles SET color = ?, is_admin = ? WHERE role_key = ?",
-                (role_color, role_is_admin, role_key),
+                "UPDATE custom_roles SET label = ?, color = ?, is_admin = ? WHERE role_key = ?",
+                (role_label_upd, role_color, role_is_admin, role_key),
             )
             execute("UPDATE users SET is_admin = ? WHERE role = ?", (role_is_admin, role_key))
             g.pop("custom_roles_map", None)

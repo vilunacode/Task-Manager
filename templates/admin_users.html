@@ -259,6 +259,9 @@
                 </div>
                 <input type="hidden" name="action" value="update-role">
                 <input type="hidden" name="role_key" value="{{ role_entry['role_key'] }}">
+                <label>Name
+                  <input type="text" name="role_label" value="{{ role_entry['label'] }}" required>
+                </label>
                 <label>Farbe
                   <input type="color" name="role_color" value="{{ role_entry['color'] }}" required>
                 </label>
