@@ -208,9 +208,12 @@ DEFAULT_APP_SETTINGS = {
     "overview_refresh_interval_seconds": "1",
     "role_color_admin": "#fc5f5f",
     "role_label_admin": "Admin",
+    "role_color_user": "#64748b",
+    "role_label_user": "Benutzer",
     "new_task_tone": "classic",
     "calendar_disabled": "0",
     "favicon_filename": "",
+    "site_name": "Task Manager",
 }
 
 FAVICON_ALLOWED_EXTENSIONS = {"ico", "png", "jpg", "jpeg", "svg"}
@@ -366,6 +369,7 @@ def init_db() -> None:
             role_key TEXT PRIMARY KEY,
             label TEXT NOT NULL UNIQUE,
             color TEXT NOT NULL,
+            is_admin INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL
         );
 
@@ -443,6 +447,10 @@ def init_db() -> None:
         db.execute(f"ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT {DEFAULT_TASK_PRIORITY}")
     if "is_archived" not in task_columns:
         db.execute("ALTER TABLE tasks ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
+
+    custom_role_columns = {row["name"] for row in db.execute("PRAGMA table_info(custom_roles)").fetchall()}
+    if "is_admin" not in custom_role_columns:
+        db.execute("ALTER TABLE custom_roles ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
 
     comment_columns = {row["name"] for row in db.execute("PRAGMA table_info(task_comments)").fetchall()}
     if "updated_at" not in comment_columns:
@@ -806,7 +814,7 @@ def normalize_initials(value: str) -> str:
 def custom_roles():
     return query_all(
         """
-        SELECT role_key, label, color, created_at
+        SELECT role_key, label, color, is_admin, created_at
         FROM custom_roles
         ORDER BY label COLLATE NOCASE ASC
         """
@@ -843,20 +851,43 @@ def get_ticket_categories():
     return g.ticket_categories
 
 
-def role_options() -> list[dict[str, str]]:
-    admin_label = app_settings().get("role_label_admin", "Admin")
-    options = [{"value": "admin", "label": admin_label}]
+def role_options() -> list[dict]:
+    settings = app_settings()
+    admin_label = settings.get("role_label_admin", "Admin")
+    user_label = settings.get("role_label_user", "Benutzer")
+    options = [
+        {"value": "admin", "label": admin_label, "is_admin": True},
+        {"value": "user", "label": user_label, "is_admin": False},
+    ]
     for role in active_custom_roles():
-        options.append({"value": role["role_key"], "label": role["label"]})
+        options.append({
+            "value": role["role_key"],
+            "label": role["label"],
+            "is_admin": bool(role["is_admin"]),
+        })
     return options
 
 
 def normalize_role(value: str) -> str:
     if value == "admin":
         return "admin"
+    if value == "user":
+        return "user"
     if value in custom_roles_map():
         return value
     return ""
+
+
+def resolve_role_assignment(role_value: str) -> tuple[int, str]:
+    """Returns (is_admin, role_key) for a given role dropdown value."""
+    if role_value == "admin":
+        return 1, ""
+    if role_value == "user":
+        return 0, "user"
+    custom = custom_roles_map().get(role_value)
+    if custom:
+        return (1 if custom.get("is_admin") else 0), role_value
+    return 0, ""
 
 
 def normalize_ticket_category(value: str) -> str:
@@ -880,28 +911,34 @@ def ticket_category_options() -> list[dict[str, str]]:
 
 
 def role_label(role: str, is_admin: int) -> str:
-    if is_admin:
-        return "Admin"
+    if role == "user":
+        return app_settings().get("role_label_user", "Benutzer")
     custom = custom_roles_map().get(role)
     if custom is not None:
         return custom["label"]
+    if is_admin:
+        return app_settings().get("role_label_admin", "Admin")
     return role or "-"
 
 
 def badge_color_class(role: str, is_admin: int) -> str:
-    if is_admin:
-        return "badge-admin"
+    if role == "user":
+        return "badge-user"
     if role in custom_roles_map():
         return f"badge-role-{role}"
+    if is_admin:
+        return "badge-admin"
     return "badge-role-unknown"
 
 
 def badge_color_value(role: str, is_admin: int) -> str:
-    if is_admin:
-        return app_settings().get("role_color_admin", "#facc15")
+    if role == "user":
+        return app_settings().get("role_color_user", "#64748b")
     custom = custom_roles_map().get(role)
     if custom is not None:
         return custom.get("color", "#64748b")
+    if is_admin:
+        return app_settings().get("role_color_admin", "#facc15")
     return "#64748b"
 
 
@@ -914,7 +951,12 @@ def custom_role_css_rules():
 
 def role_management_entries():
     return [
-        {"role_key": role["role_key"], "label": role["label"], "color": role["color"]}
+        {
+            "role_key": role["role_key"],
+            "label": role["label"],
+            "color": role["color"],
+            "is_admin": bool(role["is_admin"]),
+        }
         for role in active_custom_roles()
     ]
 
@@ -1624,6 +1666,7 @@ def onboarding():
         if action == "create-role":
             role_label_input = request.form.get("role_label", "").strip()
             role_color = request.form.get("role_color", "#64748b").strip()
+            role_is_admin = 1 if request.form.get("role_is_admin") == "1" else 0
 
             if not role_label_input:
                 flash("Bitte einen Rollennamen angeben.", "error")
@@ -1634,7 +1677,7 @@ def onboarding():
                 return redirect(url_for("onboarding", tab=active_tab))
 
             role_key = normalize_custom_role_key(role_label_input)
-            if not role_key or role_key == "admin":
+            if not role_key or role_key in ("admin", "user"):
                 flash("Rollenname ist ungültig.", "error")
                 return redirect(url_for("onboarding", tab=active_tab))
 
@@ -1647,8 +1690,8 @@ def onboarding():
                 return redirect(url_for("onboarding", tab=active_tab))
 
             execute(
-                "INSERT INTO custom_roles (role_key, label, color, created_at) VALUES (?, ?, ?, ?)",
-                (role_key, role_label_input, role_color, now_iso()),
+                "INSERT INTO custom_roles (role_key, label, color, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
+                (role_key, role_label_input, role_color, role_is_admin, now_iso()),
             )
             flash(f"Rolle \"{role_label_input}\" wurde erstellt.", "success")
             return redirect(url_for("onboarding", tab=active_tab))
@@ -1658,8 +1701,7 @@ def onboarding():
             password = request.form.get("password", "").strip()
             initials = normalize_initials(request.form.get("initials", ""))
             role_value = request.form.get("role", "").strip()
-            is_admin = 1 if role_value == "admin" else 0
-            role = "" if is_admin else normalize_role(role_value)
+            is_admin, role = resolve_role_assignment(role_value)
             member_type = request.form.get("member_type", MEMBER_TYPE_REGULAR)
             if member_type not in VALID_MEMBER_TYPES:
                 member_type = MEMBER_TYPE_REGULAR
@@ -1676,7 +1718,7 @@ def onboarding():
                 flash("Kürzel muss genau 3 Zeichen (A-Z/0-9) lang sein.", "error")
                 return redirect(url_for("onboarding", tab=active_tab))
 
-            if not is_admin and not role:
+            if not role_value or (not is_admin and not role):
                 flash("Bitte eine gültige Rolle auswählen.", "error")
                 return redirect(url_for("onboarding", tab=active_tab))
 
@@ -1758,10 +1800,25 @@ def onboarding():
             flash("Admin-Rolle wurde aktualisiert.", "success")
             return redirect(url_for("onboarding", tab=active_tab))
 
+        if action == "edit-user-role":
+            role_color = request.form.get("role_color", "").strip()
+            role_label_val = request.form.get("role_label", "").strip()
+            if not is_hex_color(role_color):
+                flash("Farbe muss im Format #RRGGBB angegeben werden.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            if not role_label_val:
+                flash("Bitte einen Namen für die Benutzer-Rolle angeben.", "error")
+                return redirect(url_for("onboarding", tab=active_tab))
+            set_app_setting("role_color_user", role_color)
+            set_app_setting("role_label_user", role_label_val)
+            flash("Benutzer-Rolle wurde aktualisiert.", "success")
+            return redirect(url_for("onboarding", tab=active_tab))
+
         if action == "edit-role":
             role_key = request.form.get("role_key", "").strip().lower()
             role_label = request.form.get("role_label", "").strip()
             role_color = request.form.get("role_color", "").strip()
+            role_is_admin = 1 if request.form.get("role_is_admin") == "1" else 0
             if not role_key or not role_label:
                 flash("Bitte einen Rollennamen angeben.", "error")
                 return redirect(url_for("onboarding", tab=active_tab))
@@ -1779,7 +1836,11 @@ def onboarding():
             if conflict:
                 flash("Eine Rolle mit diesem Namen existiert bereits.", "error")
                 return redirect(url_for("onboarding", tab=active_tab))
-            execute("UPDATE custom_roles SET label = ?, color = ? WHERE role_key = ?", (role_label, role_color, role_key))
+            execute(
+                "UPDATE custom_roles SET label = ?, color = ?, is_admin = ? WHERE role_key = ?",
+                (role_label, role_color, role_is_admin, role_key),
+            )
+            execute("UPDATE users SET is_admin = ? WHERE role = ?", (role_is_admin, role_key))
             g.pop("custom_roles_map", None)
             flash("Rolle wurde aktualisiert.", "success")
             return redirect(url_for("onboarding", tab=active_tab))
@@ -1805,8 +1866,7 @@ def onboarding():
             new_username = request.form.get("username", "").strip()
             new_initials = normalize_initials(request.form.get("initials", ""))
             role_value = request.form.get("role", "").strip()
-            new_is_admin = 1 if role_value == "admin" else 0
-            new_role = "" if new_is_admin else normalize_role(role_value)
+            new_is_admin, new_role = resolve_role_assignment(role_value)
             new_member_type = request.form.get("member_type", MEMBER_TYPE_REGULAR)
             if new_member_type not in VALID_MEMBER_TYPES:
                 new_member_type = MEMBER_TYPE_REGULAR
@@ -1824,7 +1884,7 @@ def onboarding():
             if not new_initials:
                 flash("Kürzel muss genau 3 Zeichen (A-Z/0-9) lang sein.", "error")
                 return redirect(url_for("onboarding", tab=active_tab))
-            if not new_is_admin and not new_role:
+            if not role_value or (not new_is_admin and not new_role):
                 flash("Bitte eine gültige Rolle auswählen.", "error")
                 return redirect(url_for("onboarding", tab=active_tab))
             if str(target_id) == str(user["id"]) and not new_is_admin:
@@ -1888,13 +1948,15 @@ def onboarding():
     active_tab = request.args.get("tab", "rollen")
     roles = role_management_entries()
     users = query_all(
-        "SELECT id, username, initials, role, is_admin FROM users ORDER BY is_admin DESC, username ASC"
+        "SELECT id, username, initials, role, is_admin, member_type FROM users ORDER BY is_admin DESC, username ASC"
     )
     categories = get_ticket_categories()
     role_opts = role_options()
     settings = app_settings()
     admin_color = settings.get("role_color_admin", "#facc15")
     admin_label = settings.get("role_label_admin", "Admin")
+    user_color = settings.get("role_color_user", "#64748b")
+    user_label = settings.get("role_label_user", "Benutzer")
 
     return render_template(
         "onboarding.html",
@@ -1906,6 +1968,8 @@ def onboarding():
         user=user,
         admin_color=admin_color,
         admin_label=admin_label,
+        user_color=user_color,
+        user_label=user_label,
     )
 
 
@@ -2321,10 +2385,15 @@ def settings_page():
 
             calendar_disabled = "1" if request.form.get("calendar_disabled") == "1" else "0"
 
+            site_name = request.form.get("site_name", "").strip()
+            if not site_name:
+                site_name = DEFAULT_APP_SETTINGS["site_name"]
+
             set_app_setting("new_task_highlight_seconds", str(highlight_seconds))
             set_app_setting("overview_refresh_interval_seconds", str(refresh_seconds))
             set_app_setting("new_task_tone", new_task_tone)
             set_app_setting("calendar_disabled", calendar_disabled)
+            set_app_setting("site_name", site_name)
 
             flash("Einstellungen wurden gespeichert.", "success")
             return redirect(url_for("settings_page"))
@@ -3270,8 +3339,8 @@ def manage_users():
             password = request.form.get("password", "").strip()
             password_confirm = request.form.get("password_confirm", "").strip()
             initials = normalize_initials(request.form.get("initials", ""))
-            role = normalize_role(request.form.get("role", ""))
-            is_admin = 1 if role == "admin" else 0
+            role_value_create = request.form.get("role", "").strip()
+            is_admin, role = resolve_role_assignment(role_value_create)
             member_type = request.form.get("member_type", MEMBER_TYPE_REGULAR)
             if member_type not in VALID_MEMBER_TYPES:
                 member_type = MEMBER_TYPE_REGULAR
@@ -3293,7 +3362,7 @@ def manage_users():
                 flash("Kürzel muss genau 3 Zeichen (A-Z/0-9) lang sein.", "error")
                 return redirect(url_for("manage_users"))
 
-            if not role:
+            if not role_value_create or (not is_admin and not role):
                 flash("Bitte eine gültige Rolle auswählen.", "error")
                 return redirect(url_for("manage_users"))
 
@@ -3329,6 +3398,7 @@ def manage_users():
         if action == "create-role":
             role_label_input = request.form.get("role_label", "").strip()
             role_color = request.form.get("role_color", "#64748b").strip()
+            role_is_admin = 1 if request.form.get("role_is_admin") == "1" else 0
 
             if not role_label_input:
                 flash("Bitte einen Rollennamen angeben.", "error")
@@ -3343,7 +3413,7 @@ def manage_users():
                 flash("Rollenname ist ungültig.", "error")
                 return redirect(url_for("manage_users"))
 
-            if role_key == "admin":
+            if role_key in ("admin", "user"):
                 flash("Diese Rolle ist bereits reserviert.", "error")
                 return redirect(url_for("manage_users"))
 
@@ -3357,15 +3427,17 @@ def manage_users():
                 return redirect(url_for("manage_users"))
 
             execute(
-                "INSERT INTO custom_roles (role_key, label, color, created_at) VALUES (?, ?, ?, ?)",
-                (role_key, role_label_input, role_color, now_iso()),
+                "INSERT INTO custom_roles (role_key, label, color, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
+                (role_key, role_label_input, role_color, role_is_admin, now_iso()),
             )
             flash("Rolle wurde erstellt.", "success")
             return redirect(url_for("manage_users"))
 
         if action == "update-role":
             role_key = request.form.get("role_key", "").strip().lower()
+            role_label_upd = request.form.get("role_label", "").strip()
             role_color = request.form.get("role_color", "").strip()
+            role_is_admin = 1 if request.form.get("role_is_admin") == "1" else 0
 
             if not role_key:
                 flash("Ungültige Rolle.", "error")
@@ -3377,17 +3449,41 @@ def manage_users():
 
             if role_key == "admin":
                 set_app_setting("role_color_admin", role_color)
-                flash("Admin-Rollenfarbe wurde aktualisiert.", "success")
+                if role_label_upd:
+                    set_app_setting("role_label_admin", role_label_upd)
+                flash("Admin-Rolle wurde aktualisiert.", "success")
                 return redirect(url_for("manage_users"))
 
-            existing = query_one("SELECT role_key FROM custom_roles WHERE role_key = ?", (role_key,))
+            if role_key == "user":
+                set_app_setting("role_color_user", role_color)
+                if role_label_upd:
+                    set_app_setting("role_label_user", role_label_upd)
+                flash("Benutzer-Rolle wurde aktualisiert.", "success")
+                return redirect(url_for("manage_users"))
+
+            existing = query_one("SELECT role_key, is_admin FROM custom_roles WHERE role_key = ?", (role_key,))
             if existing is None:
                 flash("Rolle nicht gefunden.", "error")
                 return redirect(url_for("manage_users"))
 
-            execute("UPDATE custom_roles SET color = ? WHERE role_key = ?", (role_color, role_key))
+            if int(existing["is_admin"]) == 1 and role_is_admin == 0:
+                affected = query_one("SELECT COUNT(*) AS cnt FROM users WHERE role = ? AND is_admin = 1", (role_key,))
+                if affected and int(affected["cnt"]) > 0:
+                    remaining = query_one(
+                        "SELECT COUNT(*) AS cnt FROM users WHERE is_admin = 1 AND (role != ? OR role IS NULL)",
+                        (role_key,),
+                    )
+                    if not remaining or int(remaining["cnt"]) < 1:
+                        flash("Adminrechte können nicht entfernt werden: es würde kein Admin mehr verbleiben.", "error")
+                        return redirect(url_for("manage_users"))
+
+            execute(
+                "UPDATE custom_roles SET color = ?, is_admin = ? WHERE role_key = ?",
+                (role_color, role_is_admin, role_key),
+            )
+            execute("UPDATE users SET is_admin = ? WHERE role = ?", (role_is_admin, role_key))
             g.pop("custom_roles_map", None)
-            flash("Rollenfarbe wurde aktualisiert.", "success")
+            flash("Rolle wurde aktualisiert.", "success")
             return redirect(url_for("manage_users"))
 
         if action == "delete-role":
@@ -3414,7 +3510,8 @@ def manage_users():
             target_id = request.form.get("user_id", "").strip()
             username = request.form.get("username", "").strip()
             initials = normalize_initials(request.form.get("initials", ""))
-            role = normalize_role(request.form.get("role", ""))
+            role_value_upd = request.form.get("role", "").strip()
+            is_admin, role = resolve_role_assignment(role_value_upd)
             new_password = request.form.get("new_password", "")
             confirm_password = request.form.get("confirm_password", "")
 
@@ -3435,7 +3532,7 @@ def manage_users():
                 flash("Kürzel muss genau 3 Zeichen (A-Z/0-9) lang sein.", "error")
                 return redirect(url_for("manage_users"))
 
-            if not role:
+            if not role_value_upd or (not is_admin and not role):
                 flash("Bitte eine gültige Rolle auswählen.", "error")
                 return redirect(url_for("manage_users"))
 
@@ -3463,7 +3560,6 @@ def manage_users():
                 flash("Neues Passwort und Bestätigung stimmen nicht überein.", "error")
                 return redirect(url_for("manage_users"))
 
-            is_admin = 1 if role == "admin" else 0
             is_inactive = 1 if request.form.get("is_inactive") == "1" else 0
             member_type = request.form.get("member_type", MEMBER_TYPE_REGULAR)
             if member_type not in VALID_MEMBER_TYPES:
@@ -3604,13 +3700,17 @@ def manage_users():
         item["is_dashboard_invisible"] = bool(row["is_dashboard_invisible"])
         enriched_users.append(item)
 
+    settings = app_settings()
     return render_template(
         "admin_users.html",
         users=enriched_users,
         user=current_user(),
         role_options=role_options(),
         role_management_entries=role_management_entries(),
-        admin_color=app_settings().get("role_color_admin", "#facc15"),
+        admin_color=settings.get("role_color_admin", "#facc15"),
+        admin_label=settings.get("role_label_admin", "Admin"),
+        user_color=settings.get("role_color_user", "#64748b"),
+        user_label=settings.get("role_label_user", "Benutzer"),
         show_sidebar=False,
     )
 

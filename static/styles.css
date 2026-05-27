@@ -334,6 +334,26 @@ select {
   background: #fff;
 }
 
+input[type="color"] {
+  padding: 2px;
+  width: 48px;
+  height: 38px;
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 8px;
+}
+input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 6px;
+}
+input[type="color"]::-moz-color-swatch {
+  border: none;
+  border-radius: 6px;
+}
+
 body[data-theme="dark"] input,
 body[data-theme="dark"] textarea,
 body[data-theme="dark"] select {
@@ -2023,16 +2043,13 @@ body[data-theme="dark"] .ob-icon-btn-danger:hover {
 }
 
 .onboarding-edit-inline input[type="text"],
-.onboarding-edit-inline input[type="color"],
 .onboarding-edit-inline select {
   font-size: 0.85rem;
   padding: 5px 8px;
 }
 
 .onboarding-edit-inline input[type="color"] {
-  padding: 2px 4px;
   height: 32px;
-  width: 48px;
 }
 
 .onboarding-edit-actions {

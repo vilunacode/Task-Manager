@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Benutzerverwaltung | Task Manager{% endblock %}
+{% block title %}Benutzerverwaltung | {{ app_settings['site_name'] }}{% endblock %}
 {% block content %}
 <section class="card">
   <h1>Benutzerverwaltung</h1>
@@ -20,7 +20,7 @@
     <label>Rolle
       <select name="role" required>
         {% for role_opt in role_options %}
-        <option value="{{ role_opt['value'] }}">{{ role_opt['label'] }}</option>
+        <option value="{{ role_opt['value'] }}">{{ role_opt['label'] }}{% if role_opt.get('is_admin') %} (Admin){% endif %}</option>
         {% endfor %}
       </select>
     </label>
@@ -118,7 +118,8 @@
                 <label>Rolle
                   <select name="role" required>
                     {% for role_opt in role_options %}
-                    <option value="{{ role_opt['value'] }}" {{ 'selected' if ((role_opt['value'] == 'admin' and account['is_admin']) or (not account['is_admin'] and role_opt['value'] == account['role'])) else '' }}>{{ role_opt['label'] }}</option>
+                    {% set sel_role = 'admin' if (account['is_admin'] and account['role'] in ('', 'admin')) else account['role'] %}
+                    <option value="{{ role_opt['value'] }}" {{ 'selected' if role_opt['value'] == sel_role else '' }}>{{ role_opt['label'] }}{% if role_opt.get('is_admin') %} (Admin){% endif %}</option>
                     {% endfor %}
                   </select>
                 </label>
@@ -167,6 +168,9 @@
     <label>Farbe
       <input type="color" name="role_color" value="#64748b" required>
     </label>
+    <label class="checkbox-label full">
+      <input type="checkbox" name="role_is_admin" value="1"> Adminrechte vergeben
+    </label>
     <div class="actions-row">
       <button type="submit" class="secondary">Rolle erstellen</button>
     </div>
@@ -177,29 +181,60 @@
       <thead>
         <tr>
           <th>Rolle</th>
-          <th>Farbe</th>
+          <th>Vorschau</th>
+          <th>Adminrechte</th>
           <th>Bearbeiten</th>
           <th>Löschen</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td>Admin</td>
+          <td>{{ admin_label }}</td>
+          <td><span class="initial-badge badge-admin">ADM</span></td>
+          <td><small class="muted">Ja (Systemrolle)</small></td>
           <td>
-            <span class="initial-badge badge-admin">ADM</span>
-          </td>
-          <td>
-            <button type="button" onclick="document.getElementById('edit-role-dialog-admin').showModal()">Farbe ändern</button>
+            <button type="button" onclick="document.getElementById('edit-role-dialog-admin').showModal()">Bearbeiten</button>
             <dialog id="edit-role-dialog-admin" class="task-dialog">
               <form method="post" class="form-grid two-columns task-edit-form">
                 <div class="dialog-head full">
-                  <h2>Rolle bearbeiten: Admin</h2>
+                  <h2>Rolle bearbeiten: {{ admin_label }}</h2>
                   <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
                 </div>
                 <input type="hidden" name="action" value="update-role">
                 <input type="hidden" name="role_key" value="admin">
+                <label>Name
+                  <input type="text" name="role_label" value="{{ admin_label }}" required>
+                </label>
                 <label>Farbe
                   <input type="color" name="role_color" value="{{ admin_color }}" required>
+                </label>
+                <div class="actions-row">
+                  <button type="submit">Speichern</button>
+                </div>
+              </form>
+            </dialog>
+          </td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>{{ user_label }}</td>
+          <td><span class="initial-badge badge-user">USR</span></td>
+          <td><small class="muted">Nein (Systemrolle)</small></td>
+          <td>
+            <button type="button" onclick="document.getElementById('edit-role-dialog-user').showModal()">Bearbeiten</button>
+            <dialog id="edit-role-dialog-user" class="task-dialog">
+              <form method="post" class="form-grid two-columns task-edit-form">
+                <div class="dialog-head full">
+                  <h2>Rolle bearbeiten: {{ user_label }}</h2>
+                  <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
+                </div>
+                <input type="hidden" name="action" value="update-role">
+                <input type="hidden" name="role_key" value="user">
+                <label>Name
+                  <input type="text" name="role_label" value="{{ user_label }}" required>
+                </label>
+                <label>Farbe
+                  <input type="color" name="role_color" value="{{ user_color }}" required>
                 </label>
                 <div class="actions-row">
                   <button type="submit">Speichern</button>
@@ -212,11 +247,10 @@
         {% for role_entry in role_management_entries %}
         <tr>
           <td>{{ role_entry['label'] }}</td>
+          <td><span class="initial-badge badge-role-{{ role_entry['role_key'] }}">{{ role_entry['label'][:2] | upper }}</span></td>
+          <td><small class="muted">{{ 'Ja' if role_entry.get('is_admin') else 'Nein' }}</small></td>
           <td>
-            <span class="initial-badge badge-role-{{ role_entry['role_key'] }}">{{ role_entry['label'][:2] | upper }}</span>
-          </td>
-          <td>
-            <button type="button" onclick="document.getElementById('edit-role-dialog-{{ role_entry.role_key }}').showModal()">Farbe ändern</button>
+            <button type="button" onclick="document.getElementById('edit-role-dialog-{{ role_entry.role_key }}').showModal()">Bearbeiten</button>
             <dialog id="edit-role-dialog-{{ role_entry.role_key }}" class="task-dialog">
               <form method="post" class="form-grid two-columns task-edit-form">
                 <div class="dialog-head full">
@@ -227,6 +261,9 @@
                 <input type="hidden" name="role_key" value="{{ role_entry['role_key'] }}">
                 <label>Farbe
                   <input type="color" name="role_color" value="{{ role_entry['color'] }}" required>
+                </label>
+                <label class="checkbox-label full">
+                  <input type="checkbox" name="role_is_admin" value="1" {% if role_entry.get('is_admin') %}checked{% endif %}> Adminrechte vergeben
                 </label>
                 <div class="actions-row">
                   <button type="submit">Speichern</button>

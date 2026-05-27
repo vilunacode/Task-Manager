@@ -3,12 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Task Manager{% endblock %}</title>
+  <title>{% block title %}{{ app_settings['site_name'] if app_settings else 'Task Manager' }}{% endblock %}</title>
   <style>
     :root {
       --role-admin-color: {{ app_settings['role_color_admin'] if app_settings else '#facc15' }};
+      --role-user-color: {{ app_settings['role_color_user'] if app_settings else '#64748b' }};
     }
     .badge-admin { background: var(--role-admin-color); }
+    .badge-user { background: var(--role-user-color); }
     {% for rule in custom_role_css_rules %}
     .{{ rule['class_name'] }} {
       background: {{ rule['color'] }};
@@ -31,7 +33,7 @@
   <div class="bg-pattern"></div>
   <header class="topbar">
     <div class="container topbar-inner">
-      <a class="brand" href="{{ url_for('dashboard') if session.get('user_id') else url_for('login') }}">Task Manager</a>
+      <a class="brand" href="{{ url_for('dashboard') if session.get('user_id') else url_for('login') }}">{{ app_settings['site_name'] if app_settings else 'Task Manager' }}</a>
       {% if not user %}
       <nav class="nav">
         <button type="button" class="theme-toggle" onclick="(function(){var t=document.body.getAttribute('data-theme')==='dark'?'light':'dark';document.body.setAttribute('data-theme',t);localStorage.setItem('tm-theme',t);})()" title="Dark/Light Mode wechseln" aria-label="Theme wechseln">

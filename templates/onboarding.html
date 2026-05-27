@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Einrichtung | Task Manager{% endblock %}
+{% block title %}Einrichtung | {{ app_settings['site_name'] }}{% endblock %}
 {% block nav_links %}{% endblock %}
 {% block content %}
 <div class="onboarding-page">
@@ -48,6 +48,9 @@
         <div class="form-action-cell">
           <button type="submit" class="secondary">Rolle erstellen</button>
         </div>
+        <label class="checkbox-label">
+          <input type="checkbox" name="role_is_admin" value="1"> Adminrechte vergeben
+        </label>
       </form>
 
       <div class="onboarding-list">
@@ -55,7 +58,7 @@
           <div class="onboarding-item-row">
             <span class="role-color-dot" style="background: {{ admin_color }};"></span>
             <span>{{ admin_label }}</span>
-            <span class="muted" style="font-size:0.8rem;">Systemrolle</span>
+            <span class="muted" style="font-size:0.8rem;">Systemrolle · Adminrechte</span>
             <div class="onboarding-item-actions">
               <button type="button" class="ob-icon-btn" onclick="toggleOnboardingEdit('role-edit-admin')">&#9998;</button>
             </div>
@@ -71,12 +74,32 @@
             </div>
           </form>
         </div>
+        <div class="onboarding-list-item">
+          <div class="onboarding-item-row">
+            <span class="role-color-dot" style="background: {{ user_color }};"></span>
+            <span>{{ user_label }}</span>
+            <span class="muted" style="font-size:0.8rem;">Systemrolle · Keine Adminrechte</span>
+            <div class="onboarding-item-actions">
+              <button type="button" class="ob-icon-btn" onclick="toggleOnboardingEdit('role-edit-user')">&#9998;</button>
+            </div>
+          </div>
+          <form method="post" class="onboarding-edit-inline" id="role-edit-user">
+            <input type="hidden" name="action" value="edit-user-role">
+            <input type="hidden" name="active_tab" value="rollen">
+            <label>Name<input type="text" name="role_label" value="{{ user_label }}" required></label>
+            <label>Farbe<input type="color" name="role_color" value="{{ user_color }}"></label>
+            <div class="onboarding-edit-actions">
+              <button type="submit" class="secondary small-btn">Speichern</button>
+              <button type="button" class="small-btn" onclick="toggleOnboardingEdit('role-edit-user')">Abbrechen</button>
+            </div>
+          </form>
+        </div>
         {% for role in roles %}
         <div class="onboarding-list-item">
           <div class="onboarding-item-row">
             <span class="role-color-dot" style="background: {{ role['color'] }};"></span>
             <span>{{ role['label'] }}</span>
-            <span class="muted" style="font-size:0.8rem;">{{ role['role_key'] }}</span>
+            <span class="muted" style="font-size:0.8rem;">{% if role.get('is_admin') %}Adminrechte{% else %}Keine Adminrechte{% endif %}</span>
             <div class="onboarding-item-actions">
               <button type="button" class="ob-icon-btn" onclick="toggleOnboardingEdit('role-edit-{{ role['role_key'] }}')">&#9998;</button>
               <form method="post">
@@ -93,6 +116,9 @@
             <input type="hidden" name="role_key" value="{{ role['role_key'] }}">
             <label>Name<input type="text" name="role_label" value="{{ role['label'] }}" required></label>
             <label>Farbe<input type="color" name="role_color" value="{{ role['color'] }}"></label>
+            <label class="checkbox-label">
+              <input type="checkbox" name="role_is_admin" value="1" {% if role.get('is_admin') %}checked{% endif %}> Adminrechte
+            </label>
             <div class="onboarding-edit-actions">
               <button type="submit" class="secondary small-btn">Speichern</button>
               <button type="button" class="small-btn" onclick="toggleOnboardingEdit('role-edit-{{ role['role_key'] }}')">Abbrechen</button>
@@ -124,7 +150,7 @@
         <label>Rolle
           <select name="role" required>
             {% for opt in role_opts %}
-            <option value="{{ opt['value'] }}">{{ opt['label'] }}</option>
+            <option value="{{ opt['value'] }}">{{ opt['label'] }}{% if opt.get('is_admin') %} (Admin){% endif %}</option>
             {% endfor %}
           </select>
         </label>
@@ -144,9 +170,9 @@
         {% for u in users %}
         <div class="onboarding-list-item">
           <div class="onboarding-item-row">
-            <span class="initial-badge {% if u['is_admin'] %}badge-admin{% else %}badge-role-{{ u['role'] }}{% endif %}">{{ u['initials'] }}</span>
+            <span class="initial-badge {% if u['is_admin'] %}badge-admin{% elif u['role'] == 'user' %}badge-user{% else %}badge-role-{{ u['role'] }}{% endif %}">{{ u['initials'] }}</span>
             <span>{{ u['username'] }}</span>
-            <span class="muted" style="font-size:0.8rem;">{% if u['is_admin'] %}{{ admin_label }}{% else %}{{ u['role'] }}{% endif %}</span>
+            <span class="muted" style="font-size:0.8rem;">{% if u['is_admin'] %}{{ admin_label }}{% elif u['role'] == 'user' %}{{ user_label }}{% else %}{{ u['role'] }}{% endif %}</span>
             {% if not u['is_admin'] %}<span class="muted" style="font-size:0.8rem;">· {% if u['member_type'] == 'trainee' %}Trainingsmitarbeiter{% else %}Mitarbeiter{% endif %}</span>{% endif %}
             <div class="onboarding-item-actions">
               <button type="button" class="ob-icon-btn" onclick="toggleOnboardingEdit('user-edit-{{ u['id'] }}')">&#9998;</button>
@@ -169,7 +195,8 @@
             <label>Rolle
               <select name="role" {% if u['id'] == user['id'] %}disabled{% endif %}>
                 {% for opt in role_opts %}
-                <option value="{{ opt['value'] }}" {% if (u['is_admin'] and opt['value'] == 'admin') or (not u['is_admin'] and u['role'] == opt['value']) %}selected{% endif %}>{{ opt['label'] }}</option>
+                {% set selected_role = 'admin' if (u['is_admin'] and u['role'] in ('', 'admin')) else u['role'] %}
+                <option value="{{ opt['value'] }}" {% if opt['value'] == selected_role %}selected{% endif %}>{{ opt['label'] }}{% if opt.get('is_admin') %} (Admin){% endif %}</option>
                 {% endfor %}
               </select>
               {% if u['id'] == user['id'] %}<input type="hidden" name="role" value="admin">{% endif %}

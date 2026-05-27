@@ -13,11 +13,11 @@ Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workf
 
 - Beim ersten Start Weiterleitung auf `/setup` zur Anlage des Admin-Accounts
 - Geführtes Onboarding (`/onboarding`) nach dem Setup:
-  - **Rollen**: Admin-Rolle (Name und Farbe konfigurierbar) sowie eigene Rollen erstellen, bearbeiten, löschen
-  - **Benutzer**: Team-Accounts anlegen, bearbeiten, löschen
+  - **Rollen**: Systemrollen (Admin, Benutzer) sowie eigene Rollen erstellen, bearbeiten, löschen — jede benutzerdefinierte Rolle kann optional mit Adminrechten versehen werden
+  - **Benutzer**: Team-Accounts anlegen (mit Rolle, Typ und Kürzel), bearbeiten, löschen
   - **Ticket-Kategorien**: Kategorien erstellen, bearbeiten, löschen
 - Während des Onboardings zeigt die Navigationsleiste nur Dark/Light-Mode-Schalter und Logout — keine Ablenkung durch weitere Links
-- Über „Überspringen" kann das Onboarding jederzeit zum Dashboard verlassen werden; der Button „Einrichtung abschließen" schließt es abschließend ab
+- Über „Überspringen" kann das Onboarding jederzeit zum Dashboard verlassen werden
 - Lösch-Aktionen im Onboarding öffnen einen Bestätigungs-Dialog im einheitlichen Seiten-Design
 
 ### Auth & Grundfunktionen
@@ -68,9 +68,11 @@ Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workf
 ### Benutzer, Rollen & Teamdarstellung
 
 - Rollenmodell:
-  - **Admin-Rolle**: immer vorhanden, Name und Farbe frei anpassbar (Standardfarbe: `#fc5f5f`)
-  - **Benutzerdefinierte Rollen**: vom Admin erstellt, mit eigener Farbe
-- Rollenverwaltung: erstellen, umbenennen, Farbe ändern, löschen
+  - **Admin** (Systemrolle): volle Adminrechte, Name und Farbe frei anpassbar (Standard: `#fc5f5f`)
+  - **Benutzer** (Systemrolle): keine Adminrechte, Name und Farbe frei anpassbar (Standard: `#64748b`)
+  - **Benutzerdefinierte Rollen**: vom Admin erstellt, mit eigener Farbe — optional mit Adminrechten ausgestattet
+- Rollenverwaltung: erstellen, umbenennen, Farbe ändern, Adminrechte vergeben/entziehen, löschen
+- Rollenauswahl im Dropdown zeigt `(Admin)` als Hinweis bei Rollen mit Adminrechten
 - Benutzerverwaltung (anlegen, bearbeiten, löschen) mit Schutzlogik (z. B. letzter Admin)
 - Zusätzliche Nutzerattribute:
   - Aktiv / Inaktiv
@@ -85,16 +87,19 @@ Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workf
 ### Kalender
 
 - Monatskalender mit persönlichen Terminen und Task-Fälligkeitsdaten
-- Persönliche Ansicht und Team-Filter
+- Persönliche Ansicht und Team-Filter (Admin)
 - Navigation zwischen Monaten
 
 ### Einstellungen
 
 - **Nutzer-Einstellungen**: Light/Dark Theme, Kartenansicht (kompakt/erweitert), Passwort ändern
 - **Admin-Einstellungen**:
+  - Webseitenname (wird in Browser-Tab und Navigationsleiste angezeigt)
   - Highlight-Dauer für neue Tasks in der Live-Übersicht
   - Live-Refresh-Intervall
   - Benachrichtigungston bei neuer Task
+  - Kalender deaktivieren (für alle Nutzer ausblenden)
+  - Favicon hochladen/entfernen (ICO, PNG, JPG, SVG — max. 2 MB)
   - Ticket-Kategorien verwalten
 
 ## Technischer Stack

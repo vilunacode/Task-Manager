@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}Einstellungen | Task Manager{% endblock %}
+{% block title %}Einstellungen | {{ app_settings['site_name'] }}{% endblock %}
 {% block content %}
 <section class="card">
   <h1>Einstellungen</h1>
@@ -31,6 +31,10 @@
   <form method="post" class="form-grid two-columns">
     <input type="hidden" name="action" value="admin-settings">
 
+    <label style="grid-column: 1 / -1;">Webseitenname
+      <input type="text" name="site_name" value="{{ settings['site_name'] }}" maxlength="60" required>
+    </label>
+
     <label>Highlight-Dauer neue Task (Sek.)
       <input type="number" min="10" max="3600" name="new_task_highlight_seconds" value="{{ settings['new_task_highlight_seconds'] }}" required>
     </label>
@@ -55,10 +59,8 @@
       <button type="submit">Einstellungen speichern</button>
     </div>
   </form>
-</section>
 
-<section class="card">
-  <h2>Favicon</h2>
+  <h3 style="margin: 24px 0 8px;">Favicon</h3>
   <p class="muted" style="margin-bottom: 14px;">Das Favicon erscheint im Browser-Tab. Erlaubte Formate: ICO, PNG, JPG, SVG (max. 2 MB).</p>
   {% if settings['favicon_filename'] %}
   <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
