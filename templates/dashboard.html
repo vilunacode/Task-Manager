@@ -131,9 +131,9 @@
     <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
   </div>
   {% if user['is_admin'] %}
-  <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">Es wurde noch keine Ticket-Kategorie angelegt. Bitte lege zuerst mindestens eine Kategorie in den <a href="{{ url_for('settings_page') }}">Einstellungen</a> an.</p>
+  <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">Es wurde noch keine Task-Kategorie angelegt. Bitte lege zuerst mindestens eine Kategorie in den <a href="{{ url_for('settings_page') }}">Einstellungen</a> an.</p>
   {% else %}
-  <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">Es wurde noch keine Ticket-Kategorie angelegt. Bitte wende dich an einen Administrator.</p>
+  <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">Es wurde noch keine Task-Kategorie angelegt. Bitte wende dich an einen Administrator.</p>
   {% endif %}
   <div class="compact-actions">
     <button type="button" class="secondary" onclick="this.closest('dialog').close()">OK</button>
@@ -210,7 +210,7 @@
       <h2>Task schließen</h2>
       <button type="button" class="link-btn" onclick="document.getElementById('close-task-dialog-abort').click()">✕</button>
     </div>
-    <p class="muted">Bist du dir sicher dass du diese Task schließen möchtest? Du kannst das Ticket dann nicht mehr zurücksetzen!</p>
+    <p class="muted">Bist du dir sicher dass du diese Task schließen möchtest? Du kannst den Task dann nicht mehr zurücksetzen!</p>
     <label>Begründung
       <textarea id="close-task-reason" rows="4" required></textarea>
     </label>

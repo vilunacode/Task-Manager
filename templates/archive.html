@@ -8,7 +8,7 @@
 
   <div class="filter-tabs" style="margin-bottom: 20px;">
     <a href="{{ url_for('archive', tab='closed') }}" class="chip{% if tab == 'closed' %} active{% endif %}">
-      Geschlossene Tickets
+      Geschlossene Tasks
       {% if tasks %}
       <span class="nav-count-badge" style="margin-left: 4px;">{{ tasks | length }}</span>
       {% endif %}

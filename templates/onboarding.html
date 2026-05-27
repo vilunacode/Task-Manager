@@ -25,7 +25,7 @@
         <span class="tab-count">{{ users|length }}</span>
       </button>
       <button type="button" class="onboarding-tab {% if active_tab == 'kategorien' %}active{% endif %}" data-tab="kategorien">
-        Ticket-Kategorien
+        Task-Kategorien
         {% if categories %}<span class="tab-count">{{ categories|length }}</span>{% endif %}
       </button>
     </nav>
@@ -223,7 +223,7 @@
     <!-- Kategorien -->
     <section class="card onboarding-panel {% if active_tab == 'kategorien' %}active{% endif %}" id="panel-kategorien">
       <div class="onboarding-panel-head">
-        <h2>Ticket-Kategorien</h2>
+        <h2>Task-Kategorien</h2>
         <p class="muted">Kategorien helfen beim Sortieren und Filtern von Aufgaben. Zum Beispiel: "Drucker / Scanner", "Netzwerk" oder "Hardware".</p>
       </div>
       <form method="post" class="form-grid three-columns onboarding-form">

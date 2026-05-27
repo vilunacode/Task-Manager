@@ -2550,7 +2550,7 @@ def parse_task_form(form) -> tuple[dict | None, str | None]:
         return None, f"Raum darf maximal {MAX_TASK_ROOM_LENGTH} Zeichen lang sein."
 
     if not ticket_category:
-        return None, "Bitte eine gültige Ticket-Kategorie auswählen."
+        return None, "Bitte eine gültige Task-Kategorie auswählen."
 
     try:
         priority = int(priority_raw)

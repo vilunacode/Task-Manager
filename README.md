@@ -15,7 +15,7 @@ Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workf
 - Geführtes Onboarding (`/onboarding`) nach dem Setup:
   - **Rollen**: Systemrollen (Admin, Benutzer) sowie eigene Rollen erstellen, bearbeiten, löschen — jede benutzerdefinierte Rolle kann optional mit Adminrechten versehen werden
   - **Benutzer**: Team-Accounts anlegen (mit Rolle, Typ und Kürzel), bearbeiten, löschen
-  - **Ticket-Kategorien**: Kategorien erstellen, bearbeiten, löschen
+  - **Task-Kategorien**: Kategorien erstellen, bearbeiten, löschen
 - Während des Onboardings zeigt die Navigationsleiste nur Dark/Light-Mode-Schalter und Logout — keine Ablenkung durch weitere Links
 - Über „Überspringen" kann das Onboarding jederzeit zum Dashboard verlassen werden
 - Lösch-Aktionen im Onboarding öffnen einen Bestätigungs-Dialog im einheitlichen Seiten-Design
@@ -60,7 +60,7 @@ Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workf
 - Pro Task zwischen gelesen/ungelesen umschalten
 - Ungelesene Pings als Counter am Ping-Filter
 
-### Archiv & geschlossene Tickets
+### Archiv & geschlossene Tasks
 
 - Geschlossene Tasks über `/admin/closed` einsehbar (Admin)
 - Archiv (`/archive`) für abgeschlossene und archivierte Aufgaben mit Filterung
@@ -100,7 +100,7 @@ Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workf
   - Benachrichtigungston bei neuer Task
   - Kalender deaktivieren (für alle Nutzer ausblenden)
   - Favicon hochladen/entfernen (ICO, PNG, JPG, SVG — max. 2 MB)
-  - Ticket-Kategorien verwalten
+  - Task-Kategorien verwalten
 
 ## Technischer Stack
 
