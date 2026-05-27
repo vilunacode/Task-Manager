@@ -5,6 +5,7 @@
   <section class="card overview-card">
     <div class="section-head">
       <h1>Task-Übersicht</h1>
+      <span id="overview-clock" class="overview-clock"></span>
     </div>
 
     <section class="overview-board">
@@ -412,6 +413,33 @@
     };
 
     document.querySelectorAll(".overview-task-card[data-task-id]").forEach(bindTooltip);
+
+    const clockEl = document.getElementById("overview-clock");
+    if (clockEl) {
+      clockEl.innerHTML =
+        '<span class="clock-hh"></span>' +
+        '<span class="clock-sep">:</span>' +
+        '<span class="clock-mm"></span>' +
+        '<span class="clock-sep">:</span>' +
+        '<span class="clock-ss"></span>';
+
+      const hhEl = clockEl.querySelector(".clock-hh");
+      const mmEl = clockEl.querySelector(".clock-mm");
+      const ssEl = clockEl.querySelector(".clock-ss");
+      const seps = clockEl.querySelectorAll(".clock-sep");
+
+      let sepVisible = true;
+      const tickClock = () => {
+        const t = new Date();
+        hhEl.textContent = String(t.getHours()).padStart(2, "0");
+        mmEl.textContent = String(t.getMinutes()).padStart(2, "0");
+        ssEl.textContent = String(t.getSeconds()).padStart(2, "0");
+        sepVisible = !sepVisible;
+        seps.forEach(s => s.classList.toggle("dim", !sepVisible));
+      };
+      tickClock();
+      setInterval(tickClock, 1000);
+    }
   })();
 </script>
 {% endblock %}

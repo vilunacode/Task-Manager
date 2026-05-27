@@ -1525,6 +1525,32 @@ body[data-theme="dark"] .day-dialog-event-item {
   margin-bottom: 0;
 }
 
+.overview-clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-family: ui-monospace, "Cascadia Code", "Fira Mono", monospace;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand) 25%, transparent);
+  border-radius: 10px;
+  padding: 4px 14px;
+  user-select: none;
+  line-height: 1;
+}
+
+.overview-clock .clock-sep {
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+.overview-clock .clock-sep.dim {
+  opacity: 0.2;
+}
+
 .overview-board {
   display: grid;
   grid-template-columns: 1fr;
