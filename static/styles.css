@@ -1211,6 +1211,41 @@ body[data-theme="dark"] .comment-card {
   font-size: 0.9rem;
 }
 
+.req-mark {
+  color: #dc2626;
+  font-weight: 700;
+  margin-left: 2px;
+}
+
+body[data-theme="dark"] .req-mark {
+  color: #f87171;
+}
+
+.req-legend {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+
+details summary { list-style: none; }
+details summary::-webkit-details-marker { display: none; }
+details[open] .floor-arrow { transform: rotate(90deg); }
+.floor-arrow { display: inline-block; transition: transform 0.15s; font-size: 0.8rem; color: var(--muted); }
+
+.field-warning-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #92400e;
+  font-size: 0.78rem;
+  font-weight: 500;
+  margin-top: 4px;
+}
+
+body[data-theme="dark"] .field-warning-hint {
+  color: #fbbf24;
+}
+
 .form-grid .full {
   grid-column: 1 / -1;
 }
@@ -1699,8 +1734,12 @@ td {
 .log-dot-status_changed { background: #3b82f6; }
 .log-dot-task_closed    { background: #f97316; }
 .log-dot-task_reopened  { background: #eab308; }
-.log-dot-task_archived  { background: #8b5cf6; }
-.log-dot-task_deleted   { background: #ef4444; }
+.log-dot-task_archived   { background: #8b5cf6; }
+.log-dot-task_unarchived { background: #a78bfa; }
+.log-dot-task_deleted    { background: #ef4444; }
+.log-dot-comment_added  { background: #06b6d4; }
+.log-dot-comment_edited { background: #a8a29e; }
+.log-dot-comment_deleted { background: #f43f5e; }
 
 .log-col-time  { font-size: 0.82rem; white-space: nowrap; }
 .log-col-user  { white-space: nowrap; }

@@ -120,8 +120,86 @@
   <p class="muted">Noch keine Kategorien angelegt.</p>
   {% endif %}
 </section>
+
+<section class="card">
+  <h2>Raumplan</h2>
+  <p class="muted" style="margin-bottom:16px;">Ebenen und Räume verwalten — diese stehen beim Erstellen einer Task als Auswahl zur Verfügung.</p>
+
+  <div style="max-width:900px;">
+  <form method="post" class="form-grid two-columns" style="margin-bottom:20px;">
+    <input type="hidden" name="action" value="create-floor">
+    <label>Neue Ebene erstellen
+      <input type="text" name="floor_name" placeholder="z. B. BE" maxlength="40" required>
+    </label>
+    <div class="actions-row">
+      <button type="submit" class="secondary">Ebene erstellen</button>
+    </div>
+  </form>
+
+  {% if room_floors_data %}
+    {% for floor in room_floors_data %}
+    <details style="border:1px solid var(--line); border-radius:12px; margin-bottom:8px;">
+      <summary style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; cursor:pointer; list-style:none; user-select:none;">
+        <span style="display:flex; align-items:center; gap:8px;">
+          <span class="floor-arrow">▶</span>
+          <strong>{{ floor.name }}</strong>
+          <span class="muted" style="font-size:0.82rem;">({{ floor.rooms | length }} Räume)</span>
+        </span>
+        <button type="button" class="danger small-btn" onclick="event.preventDefault(); openDeleteFloorConfirm({{ floor.id }}, '{{ floor.name | e }}')">Ebene löschen</button>
+      </summary>
+
+      <div style="padding:0 14px 14px;">
+        <form method="post" class="form-grid two-columns" style="margin-bottom:10px; margin-top:10px;">
+          <input type="hidden" name="action" value="create-room">
+          <input type="hidden" name="floor_id" value="{{ floor.id }}">
+          <label style="font-size:0.85rem; font-weight:500;">Raum hinzufügen
+            <input type="text" name="room_name" placeholder="z. B. BE01" maxlength="60" required>
+          </label>
+          <div class="actions-row">
+            <button type="submit" class="secondary small-btn">Raum hinzufügen</button>
+          </div>
+        </form>
+
+        {% if floor.rooms %}
+        <div style="display:flex; flex-wrap:wrap; gap:6px;">
+          {% for room in floor.rooms %}
+          <form method="post" class="inline-form">
+            <input type="hidden" name="action" value="delete-room">
+            <input type="hidden" name="room_id" value="{{ room.id }}">
+            <button type="submit" class="secondary small-btn" title="Raum entfernen" style="display:inline-flex;gap:6px;align-items:center;">
+              {{ room.name }} <span style="opacity:0.5;font-size:0.8rem;">✕</span>
+            </button>
+          </form>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted" style="font-size:0.85rem; margin:0;">Noch keine Räume auf dieser Ebene.</p>
+        {% endif %}
+      </div>
+    </details>
+    {% endfor %}
+  {% else %}
+  <p class="muted">Noch keine Ebenen angelegt.</p>
+  {% endif %}
+  </div>
+</section>
 {% endif %}
 
+<dialog id="delete-floor-dialog" class="task-dialog confirm-dialog-small">
+  <form method="post" id="delete-floor-form">
+    <div class="dialog-head">
+      <strong>Ebene löschen?</strong>
+      <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
+    </div>
+    <p class="muted" style="margin:10px 0 18px; line-height:1.5;">Alle Räume dieser Ebene werden ebenfalls entfernt. Diese Aktion kann nicht rückgängig gemacht werden.</p>
+    <input type="hidden" name="action" value="delete-floor">
+    <input type="hidden" name="floor_id" id="delete-floor-id" value="">
+    <div class="compact-actions">
+      <button type="submit" class="danger">Ja, löschen</button>
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
+    </div>
+  </form>
+</dialog>
 <dialog id="delete-category-dialog" class="task-dialog confirm-dialog-small">
   <form method="post" id="delete-category-form">
     <div class="dialog-head">
@@ -141,6 +219,10 @@
 function openDeleteCategoryConfirm(categoryKey) {
   document.getElementById('delete-category-key').value = categoryKey;
   document.getElementById('delete-category-dialog').showModal();
+}
+function openDeleteFloorConfirm(floorId, floorName) {
+  document.getElementById('delete-floor-id').value = floorId;
+  document.getElementById('delete-floor-dialog').showModal();
 }
 </script>
 {% endblock %}

@@ -23,7 +23,18 @@
     </div>
     <div class="task-view-meta-item">
       <small class="task-view-label">Ansprechpartner</small>
-      <strong>{{ task['contact_person_display'] }}</strong>
+      {% if task['contact_persons'] or task.get('contact_person_custom') %}
+      <div class="assignee-badges" style="margin-top:4px;">
+        {% for cp in task['contact_persons'] %}
+        <span class="initial-badge {{ cp['color_class'] }}" title="{{ cp['username'] }} ({{ cp['role_label'] }})">{{ cp['initials'] }}</span>
+        {% endfor %}
+        {% if task.get('contact_person_custom') %}
+        <span class="muted" style="font-size:0.85rem; align-self:center;">{{ task['contact_person_custom'] }}</span>
+        {% endif %}
+      </div>
+      {% else %}
+      <strong>-</strong>
+      {% endif %}
     </div>
     <div class="task-view-meta-item">
       <small class="task-view-label">Fällig bis</small>
@@ -67,8 +78,51 @@
     <span class="badge">{{ status_label(task['status']) }}</span>
   </div>
   <form method="post" action="{{ url_for('edit_task', task_id=task['id']) }}" class="form-grid two-columns task-edit-form">
-    <label class="field-compact">Titel
+    <label class="field-compact"><span>Titel <span class="req-mark">*</span></span>
       <input type="text" name="title" value="{{ task['title'] }}" required>
+    </label>
+    <label class="field-compact"><span>Kategorie <span class="req-mark">*</span></span>
+      <select name="ticket_category" required>
+        {% for option in ticket_category_options %}
+        <option value="{{ option['value'] }}" {{ 'selected' if task['ticket_category'] == option['value'] else '' }}>
+          {{ option['label'] }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="full"><span>Beschreibung <span class="req-mark">*</span></span>
+      <textarea name="description" rows="4" required>{{ task['description'] }}</textarea>
+      <small class="field-warning-hint">&#9888; Bitte keine persönlichen Daten angeben.</small>
+    </label>
+    {% if room_floors_data %}
+    <label class="field-compact">Ebene
+      <select id="edit-floor-select" onchange="updateEditRoomSelect()">
+        <option value="">-- Ebene wählen --</option>
+        {% for floor in room_floors_data %}
+        <option value="{{ floor.id }}">{{ floor.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field-compact">Raum
+      <select name="room" id="edit-room-select">
+        <option value="">-- zuerst Ebene wählen --</option>
+      </select>
+    </label>
+    {% else %}
+    <label class="field-compact">Raum
+      <input type="text" name="room" value="{{ task['room'] or '' }}" maxlength="120" placeholder="z.B. BE.45">
+    </label>
+    {% endif %}
+    <label class="field-compact">Ansprechpartner
+      {% set cp_ids = task.get('contact_persons', []) | map(attribute='id') | list %}
+      <select name="contact_person_ids" multiple size="1" class="compact-multi">
+        {% for person in users %}
+        <option value="{{ person['id'] }}" {{ 'selected' if person['id'] in cp_ids else '' }}>{{ person['initials'] }} - {{ person['username'] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field-compact">Externer Ansprechpartner
+      <input type="text" name="contact_person_custom" maxlength="200" placeholder="Ansprechpartner manuell eingeben" value="{{ task.get('contact_person_custom', '') }}">
     </label>
     <label class="field-compact">Bearbeiter
       <select name="assignee_ids" multiple size="1" class="compact-multi">
@@ -76,28 +130,6 @@
         {% for person in users %}
         <option value="{{ person['id'] }}" {{ 'selected' if person['id'] in assigned_ids else '' }}>
           {{ person['initials'] }} - {{ person['username'] }}
-        </option>
-        {% endfor %}
-      </select>
-    </label>
-    <label class="field-compact">Ansprechpartner
-      <select name="contact_person_user_id" required onchange="toggleCustomContact(this)">
-        {% for person in users %}
-        <option value="{{ person['id'] }}" {{ 'selected' if task['contact_person_user_id'] and person['id'] == task['contact_person_user_id'] else '' }}>
-          {{ person['initials'] }} - {{ person['username'] }}
-        </option>
-        {% endfor %}
-        <option value="other" {{ 'selected' if not task['contact_person_user_id'] and task.get('contact_person') else '' }}>Andere...</option>
-      </select>
-    </label>
-    <label class="field-compact contact-custom-label" style="{{ '' if (not task['contact_person_user_id'] and task.get('contact_person')) else 'display:none' }}">Anderer Ansprechpartner
-      <input type="text" name="contact_person_custom" maxlength="100" value="{{ task.get('contact_person', '') if not task['contact_person_user_id'] else '' }}" placeholder="Name eingeben">
-    </label>
-    <label class="field-compact">Kategorie
-      <select name="ticket_category" required>
-        {% for option in ticket_category_options %}
-        <option value="{{ option['value'] }}" {{ 'selected' if task['ticket_category'] == option['value'] else '' }}>
-          {{ option['label'] }}
         </option>
         {% endfor %}
       </select>
@@ -111,19 +143,13 @@
         <option value="5" {{ 'selected' if (task['priority'] or 3) == 5 else '' }}>5</option>
       </select>
     </label>
-    <label class="field-compact">Raum (optional)
-      <input type="text" name="room" value="{{ task['room'] or '' }}" maxlength="120" placeholder="z.B. BE.45">
-    </label>
-    <small class="muted full">Mehrfachauswahl: Strg/Cmd gedrückt halten.</small>
-    <label class="full">Beschreibung
-      <textarea name="description" rows="4" required>{{ task['description'] }}</textarea>
-    </label>
-    <label>Fällig am (optional)
+    <label>Fällig am
       <input type="date" name="due_date" value="{{ due_date_input_value(task['due_date']) }}">
     </label>
-    <label>Uhrzeit (optional)
+    <label>Uhrzeit
       <input type="time" name="due_time" value="{{ due_time_input_value(task['due_date']) }}">
     </label>
+    <p class="full req-legend"><span class="req-mark">*</span> Pflichtfeld</p>
     <div class="full" style="display:flex; justify-content:flex-end; margin-top:4px;">
       <button type="submit" style="padding:12px 22px; font-size:1rem;">Änderungen speichern</button>
     </div>
@@ -138,6 +164,7 @@
   <form method="post" action="{{ url_for('add_task_comment', task_id=task['id']) }}" class="form-grid">
     <label>Kommentar
       <textarea id="comment-content" name="content" rows="3" required></textarea>
+      <small class="field-warning-hint">&#9888; Bitte keine persönlichen Daten angeben.</small>
     </label>
     <input type="hidden" id="mention-user-ids" name="mention_user_ids" value="">
     <div class="actions-row">
@@ -228,20 +255,31 @@
   </div>
 </section>
 <script>
-  function toggleCustomContact(select) {
-    const form = select.closest("form");
-    const label = form ? form.querySelector(".contact-custom-label") : null;
-    if (!label) return;
-    const input = label.querySelector("input");
-    if (select.value === "other") {
-      label.style.display = "";
-      input.required = true;
-    } else {
-      label.style.display = "none";
-      input.required = false;
-      input.value = "";
-    }
+  const ROOM_FLOORS_DATA = {{ room_floors_data | tojson }};
+  function updateEditRoomSelect(preselect) {
+    const floorSel = document.getElementById("edit-floor-select");
+    const roomSel = document.getElementById("edit-room-select");
+    if (!floorSel || !roomSel) return;
+    const floorId = parseInt(floorSel.value);
+    const floor = ROOM_FLOORS_DATA.find(f => f.id === floorId);
+    roomSel.innerHTML = '<option value="">-- Raum wählen --</option>';
+    if (!floor) return;
+    const floorOpt = new Option(floor.name, floor.name, false, preselect ? floor.name === preselect : true);
+    roomSel.appendChild(floorOpt);
+    floor.rooms.forEach(r => {
+      const opt = new Option(r.name, r.name, false, preselect ? r.name === preselect : false);
+      roomSel.appendChild(opt);
+    });
   }
+  (function preselectRoom() {
+    const currentRoom = {{ (task['room'] or '') | tojson }};
+    if (!currentRoom) return;
+    const floor = ROOM_FLOORS_DATA.find(f => f.name === currentRoom || f.rooms.some(r => r.name === currentRoom));
+    if (!floor) return;
+    const floorSel = document.getElementById("edit-floor-select");
+    if (floorSel) floorSel.value = floor.id;
+    updateEditRoomSelect(currentRoom);
+  })();
 </script>
 <script>
   (() => {

@@ -70,10 +70,6 @@
               <span class="task-meta-key">Fällig bis</span>
               <span class="task-meta-value">{{ format_datetime(task['due_date']) }}</span>
             </div>
-            {% else %}
-            <div class="task-meta-row task-meta-row-no-key">
-              <span class="task-meta-key">Kein Fälligkeitsdatum</span>
-            </div>
             {% endif %}
             <div class="task-meta-row">
               <span class="task-meta-key">Kategorie</span>
@@ -84,12 +80,8 @@
               <span class="task-meta-value">{{ task['room'] or '-' }}</span>
             </div>
             <div class="task-meta-row">
-              <span class="task-meta-key">Erstellt am</span>
-              <span class="task-meta-value">{{ format_system_datetime(task['created_at']) }}</span>
-            </div>
-            <div class="task-meta-row">
-              <span class="task-meta-key">Erstellt von</span>
-              <span class="task-meta-value">{{ task['creator_name'] }}</span>
+              <span class="task-meta-key">Ansprechpartner</span>
+              <span class="task-meta-value">{{ task['contact_person_display'] }}</span>
             </div>
           </div>
           {% if filter_mode == 'pings' and ping_tab == 'read' %}
@@ -146,25 +138,54 @@
       <h2>Neue Task erstellen</h2>
       <button type="button" class="link-btn" id="close-create-task">✕</button>
     </div>
-    <label class="field-compact">Titel
+    <label class="field-compact"><span>Titel <span class="req-mark">*</span></span>
       <input type="text" name="title" required>
     </label>
-    <label class="field-compact">Bearbeiter
-      <select name="assignee_ids" multiple size="1" class="compact-multi">
+    <label class="field-compact"><span>Kategorie <span class="req-mark">*</span></span>
+      <select name="ticket_category" required>
+        <option value="" selected disabled>Bitte wählen</option>
+        {% for option in ticket_category_options %}
+        <option value="{{ option['value'] }}">{{ option['label'] }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="full"><span>Beschreibung <span class="req-mark">*</span></span>
+      <textarea name="description" rows="4" required></textarea>
+      <small class="field-warning-hint">&#9888; Bitte keine persönlichen Daten angeben.</small>
+    </label>
+    {% if room_floors_data %}
+    <label class="field-compact">Ebene
+      <select id="create-floor-select" onchange="updateCreateRoomSelect()">
+        <option value="">-- Ebene wählen --</option>
+        {% for floor in room_floors_data %}
+        <option value="{{ floor.id }}">{{ floor.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field-compact">Raum
+      <select name="room" id="create-room-select">
+        <option value="">-- zuerst Ebene wählen --</option>
+      </select>
+    </label>
+    {% else %}
+    <label class="field-compact">Raum
+      <input type="text" name="room" maxlength="120" placeholder="z.B. BE.45">
+    </label>
+    {% endif %}
+    <label class="field-compact">Ansprechpartner
+      <select name="contact_person_ids" multiple size="1" class="compact-multi">
         {% for person in users %}
         <option value="{{ person['id'] }}">{{ person['initials'] }} - {{ person['username'] }}</option>
         {% endfor %}
       </select>
     </label>
-    <small class="muted full">Mehrfachauswahl: Strg/Cmd gedrückt halten.</small>
-    <label class="full">Beschreibung
-      <textarea name="description" rows="4" required></textarea>
+    <label class="field-compact">Externer Ansprechpartner
+      <input type="text" name="contact_person_custom" maxlength="200" placeholder="Ansprechpartner manuell eingeben">
     </label>
-    <label class="field-compact">Kategorie
-      <select name="ticket_category" required>
-        <option value="" selected disabled>Bitte wählen</option>
-        {% for option in ticket_category_options %}
-        <option value="{{ option['value'] }}">{{ option['label'] }}</option>
+    <label class="field-compact">Bearbeiter
+      <select name="assignee_ids" multiple size="1" class="compact-multi">
+        {% for person in users %}
+        <option value="{{ person['id'] }}">{{ person['initials'] }} - {{ person['username'] }}</option>
         {% endfor %}
       </select>
     </label>
@@ -177,27 +198,13 @@
         <option value="5">5</option>
       </select>
     </label>
-    <label class="field-compact">Raum (optional)
-      <input type="text" name="room" maxlength="120" placeholder="z.B. BE.45">
-    </label>
-    <label>Fällig am (optional)
+    <label>Fällig am
       <input type="date" name="due_date">
     </label>
-    <label>Uhrzeit (optional)
+    <label>Uhrzeit
       <input type="time" name="due_time">
     </label>
-    <label class="field-compact">Ansprechpartner
-      <select name="contact_person_user_id" required onchange="toggleCustomContact(this)">
-        <option value="" selected disabled>Bitte wählen</option>
-        {% for person in users %}
-        <option value="{{ person['id'] }}">{{ person['initials'] }} - {{ person['username'] }}</option>
-        {% endfor %}
-        <option value="other">Andere...</option>
-      </select>
-    </label>
-    <label class="field-compact contact-custom-label" style="display:none">Anderer Ansprechpartner
-      <input type="text" name="contact_person_custom" maxlength="100" placeholder="Name eingeben">
-    </label>
+    <p class="full req-legend"><span class="req-mark">*</span> Pflichtfeld</p>
     <div class="actions-row">
       <button type="submit">Task anlegen</button>
     </div>
@@ -211,8 +218,9 @@
       <button type="button" class="link-btn" onclick="document.getElementById('close-task-dialog-abort').click()">✕</button>
     </div>
     <p class="muted">Bist du dir sicher dass du diese Task schließen möchtest? Du kannst den Task dann nicht mehr zurücksetzen!</p>
-    <label>Begründung
+    <label><span>Begründung <span class="req-mark">*</span></span>
       <textarea id="close-task-reason" rows="4" required></textarea>
+      <small class="field-warning-hint">&#9888; Bitte keine persönlichen Daten angeben.</small>
     </label>
     <div class="compact-actions">
       <button type="button" class="secondary" id="close-task-dialog-abort">Abbrechen</button>
@@ -224,19 +232,17 @@
 <div id="task-tooltip" class="task-tooltip" hidden></div>
 
 <script>
-  function toggleCustomContact(select) {
-    const form = select.closest("form");
-    const label = form ? form.querySelector(".contact-custom-label") : null;
-    if (!label) return;
-    const input = label.querySelector("input");
-    if (select.value === "other") {
-      label.style.display = "";
-      input.required = true;
-    } else {
-      label.style.display = "none";
-      input.required = false;
-      input.value = "";
-    }
+  const ROOM_FLOORS_DATA = {{ room_floors_data | tojson }};
+  function updateCreateRoomSelect() {
+    const floorSel = document.getElementById("create-floor-select");
+    const roomSel = document.getElementById("create-room-select");
+    if (!floorSel || !roomSel) return;
+    const floorId = parseInt(floorSel.value);
+    const floor = ROOM_FLOORS_DATA.find(f => f.id === floorId);
+    roomSel.innerHTML = '<option value="">-- Raum wählen --</option>';
+    if (!floor) return;
+    roomSel.appendChild(new Option(floor.name, floor.name, true, true));
+    floor.rooms.forEach(r => roomSel.appendChild(new Option(r.name, r.name)));
   }
 </script>
 <script>
@@ -354,11 +360,11 @@
       const createdAtText = task.created_at_display || card.dataset.createdAtDisplay || formatSystemDateTime(task.created_at);
       const categoryText = task.ticket_category_label || "Sonstiges";
       const roomText = (task.room || "").trim() || "-";
+      const contactText = task.contact_person_display || card.dataset.contactDisplay || "-";
       const extraMeta = USE_EXTENDED_META
         ? `<div class="task-meta-row"><span class="task-meta-key">Kategorie</span><span class="task-meta-value">${escapeHtml(categoryText)}</span></div>
            <div class="task-meta-row"><span class="task-meta-key">Raum</span><span class="task-meta-value">${escapeHtml(roomText)}</span></div>
-           <div class="task-meta-row"><span class="task-meta-key">Erstellt am</span><span class="task-meta-value">${escapeHtml(createdAtText || "-")}</span></div>
-           <div class="task-meta-row"><span class="task-meta-key">Erstellt von</span><span class="task-meta-value">${escapeHtml(task.creator_name || "-")}</span></div>`
+           <div class="task-meta-row"><span class="task-meta-key">Ansprechpartner</span><span class="task-meta-value">${escapeHtml(contactText)}</span></div>`
         : "";
 
       card.innerHTML = `
@@ -368,7 +374,7 @@
         <div class="task-card-meta">
           ${task.due_date_display && task.due_date_display !== "-"
             ? `<div class="task-meta-row task-meta-row-due"><span class="task-meta-key">Fällig bis</span><span class="task-meta-value">${escapeHtml(task.due_date_display)}</span></div>`
-            : `<div class="task-meta-row task-meta-row-no-key"><span class="task-meta-key">Kein Fälligkeitsdatum</span></div>`
+            : ""
           }
           ${extraMeta}
         </div>

@@ -377,6 +377,26 @@ def init_db() -> None:
             created_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS task_contact_persons (
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            PRIMARY KEY (task_id, user_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS room_floors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS room_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            floor_id INTEGER NOT NULL REFERENCES room_floors(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(floor_id, name)
+        );
+
         CREATE TABLE IF NOT EXISTS activity_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             actor_id INTEGER,
@@ -558,6 +578,45 @@ def init_db() -> None:
             "INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)",
             (key, value),
         )
+
+    db.execute(
+        """
+        INSERT OR IGNORE INTO task_contact_persons (task_id, user_id)
+        SELECT id, contact_person_user_id FROM tasks
+        WHERE contact_person_user_id IS NOT NULL
+        """
+    )
+
+    _room_seeds = [
+        ("BE", ["BEG41", "BEG45", "BEG47", "BE01", "BE02", "BE03", "BE04", "BE05", "BE06"]),
+        ("BO", [
+            "BO02", "BO03", "BO07", "BO10", "BO11", "BO12", "BO13", "BO14", "BO15", "BO16",
+            "BO17", "BO18", "BO19", "BO22", "BO23", "BO24", "BO25", "BO28", "BO30", "BO31",
+            "BO32", "BO33", "BO35", "BO36", "BO37", "BO39", "BO40", "BO41", "BO42", "BO43",
+            "BO45", "BO46", "BO47", "BO48", "BO50", "BO51", "BO52", "BO53", "BO54", "BO55",
+            "BO56", "BO58", "BO60", "BO61", "BO62", "BO63", "BO64", "BO65", "BO66",
+        ]),
+        ("EE", ["EE03", "EE04", "EE07", "EE08", "EE09", "EE10", "EE11", "EE13", "EE15"]),
+        ("EO", ["EO01", "EO02", "EO05", "Kantine"]),
+        ("EU", [
+            "EU01", "EU03", "EU04", "EU05", "EU06", "EU07", "EU08", "EU09", "EU10",
+            "EU11", "EU13", "EU14", "EU18", "EU19", "EU20", "EU22",
+        ]),
+    ]
+    _seed_ts = now_iso()
+    for _floor_name, _rooms in _room_seeds:
+        db.execute(
+            "INSERT OR IGNORE INTO room_floors (name, created_at) VALUES (?, ?)",
+            (_floor_name, _seed_ts),
+        )
+        _floor_row = db.execute(
+            "SELECT id FROM room_floors WHERE name = ?", (_floor_name,)
+        ).fetchone()
+        for _room_name in _rooms:
+            db.execute(
+                "INSERT OR IGNORE INTO room_entries (floor_id, name, created_at) VALUES (?, ?, ?)",
+                (_floor_row["id"], _room_name, _seed_ts),
+            )
 
     db.commit()
 
@@ -865,6 +924,24 @@ def resolve_role_assignment(role_value: str) -> tuple[int, str]:
     return 0, ""
 
 
+def get_all_rooms_by_floor() -> list[dict]:
+    if "rooms_by_floor" not in g:
+        floors = query_all("SELECT id, name FROM room_floors ORDER BY name ASC")
+        result = []
+        for floor in floors:
+            rooms = query_all(
+                "SELECT id, name FROM room_entries WHERE floor_id = ? ORDER BY name ASC",
+                (floor["id"],),
+            )
+            result.append({
+                "id": floor["id"],
+                "name": floor["name"],
+                "rooms": [{"id": r["id"], "name": r["name"]} for r in rooms],
+            })
+        g.rooms_by_floor = result
+    return g.rooms_by_floor
+
+
 def normalize_ticket_category(value: str) -> str:
     normalized = value.strip().lower()
     for cat in get_ticket_categories():
@@ -1005,6 +1082,52 @@ def contact_person_badge(task_row) -> dict | None:
     }
 
 
+def contact_persons_map(task_ids: list[int]) -> dict[int, list[dict]]:
+    if not task_ids:
+        return {}
+    placeholders = ",".join(["?"] * len(task_ids))
+    rows = query_all(
+        f"""
+        SELECT tcp.task_id, u.id, u.username, u.initials, u.role, u.is_admin
+        FROM task_contact_persons tcp
+        JOIN users u ON u.id = tcp.user_id
+        WHERE tcp.task_id IN ({placeholders})
+        ORDER BY u.username ASC
+        """,
+        tuple(task_ids),
+    )
+    mapping: dict[int, list[dict]] = {tid: [] for tid in task_ids}
+    for row in rows:
+        mapping[int(row["task_id"])].append({
+            "id": int(row["id"]),
+            "username": row["username"],
+            "initials": row["initials"] or make_initials_from_username(row["username"]),
+            "role_label": role_label(row["role"], row["is_admin"]),
+            "color_class": badge_color_class(row["role"], row["is_admin"]),
+            "badge_color": badge_color_value(row["role"], row["is_admin"]),
+        })
+    return mapping
+
+
+def enrich_tasks_with_contact_persons(tasks: list) -> list:
+    if not tasks:
+        return tasks
+    task_ids = [int(t["id"]) for t in tasks]
+    mapping = contact_persons_map(task_ids)
+    result = []
+    for task in tasks:
+        d = dict(task)
+        cps = mapping.get(int(task["id"]), [])
+        d["contact_persons"] = cps
+        parts = [cp["username"] for cp in cps]
+        custom = (task.get("contact_person") or "").strip()
+        if custom:
+            parts.append(custom)
+        d["contact_person_display"] = ", ".join(parts) if parts else "-"
+        result.append(d)
+    return result
+
+
 def sidebar_users():
     rows = query_all(
         """
@@ -1074,15 +1197,9 @@ def fetch_tasks(*, status: str | None = None, only_assigned_to: int | None = Non
         SELECT
             t.*,
             c.username AS creator_name,
-            cp.id AS contact_person_user_id,
-            cp.username AS contact_person_name,
-            cp.initials AS contact_person_initials,
-            cp.role AS contact_person_role,
-            cp.is_admin AS contact_person_is_admin,
             COALESCE(GROUP_CONCAT(DISTINCT au.username), '') AS assignee_names
         FROM tasks t
         JOIN users c ON c.id = t.created_by
-        LEFT JOIN users cp ON cp.id = t.contact_person_user_id
         LEFT JOIN task_assignees ta ON ta.task_id = t.id
         LEFT JOIN users au ON au.id = ta.user_id
         {where_sql}
@@ -1564,6 +1681,7 @@ def inject_helpers():
         "tone_options": sorted(TONE_OPTIONS.keys()),
         "closed_task_count": closed_task_count,
         "custom_role_css_rules": custom_role_css_rules(),
+        "room_floors_data": get_all_rooms_by_floor(),
     }
 
 
@@ -2014,14 +2132,7 @@ def dashboard():
     )
     tasks = dashboard_tasks_for_filter(user, filter_mode, ping_tab)
     tasks = enrich_tasks_with_assignees(tasks)
-    tasks = [
-        {
-            **task,
-            "contact_person_badge": contact_person_badge(task),
-            "contact_person_display": (lambda cp: f"{cp['initials']} - {cp['username']}" if cp else "-")(contact_person_badge(task)),
-        }
-        for task in tasks
-    ]
+    tasks = enrich_tasks_with_contact_persons(tasks)
     editable_task_ids = set() if user["is_admin"] else assigned_task_ids_for_user(user["id"])
 
     grouped = {
@@ -2049,14 +2160,7 @@ def dashboard():
 @login_required
 def overview():
     user = current_user()
-    raw_tasks = enrich_tasks_with_assignees(fetch_tasks())
-    tasks = [
-        {
-            **task,
-            "contact_person_display": (lambda cp: f"{cp['initials']} - {cp['username']}" if cp else "-")(contact_person_badge(task)),
-        }
-        for task in raw_tasks
-    ]
+    tasks = enrich_tasks_with_contact_persons(enrich_tasks_with_assignees(fetch_tasks()))
 
     grouped = {
         STATUS_OPEN: [],
@@ -2078,10 +2182,9 @@ def overview():
 @app.route("/api/overview/tasks")
 @login_required
 def overview_tasks_api():
-    tasks = enrich_tasks_with_assignees(fetch_tasks())
+    tasks = enrich_tasks_with_contact_persons(enrich_tasks_with_assignees(fetch_tasks()))
     payload = []
     for task in tasks:
-        cp = contact_person_badge(task)
         payload.append(
             {
                 "id": task["id"],
@@ -2096,7 +2199,7 @@ def overview_tasks_api():
                 "room": task.get("room", "") or "",
                 "ticket_category_label": ticket_category_label(task.get("ticket_category", "")),
                 "creator_name": task.get("creator_name", ""),
-                "contact_person_display": f"{cp['initials']} - {cp['username']}" if cp else "-",
+                "contact_person_display": task.get("contact_person_display", "-"),
             }
         )
     return jsonify({"tasks": payload})
@@ -2115,7 +2218,7 @@ def dashboard_tasks_api():
         ping_tab = "unread"
 
     tasks = dashboard_tasks_for_filter(user, filter_mode, ping_tab)
-    tasks = enrich_tasks_with_assignees(tasks)
+    tasks = enrich_tasks_with_contact_persons(enrich_tasks_with_assignees(tasks))
     editable_task_ids = set() if user["is_admin"] else assigned_task_ids_for_user(user["id"])
 
     payload = []
@@ -2140,9 +2243,8 @@ def dashboard_tasks_api():
                 "ticket_category_label": ticket_category_label(task.get("ticket_category", "")),
                 "description": task.get("description", "") or "",
                 "room": task.get("room", "") or "",
-                "contact_person": task.get("contact_person", ""),
-                "contact_person_badge": contact_person_badge(task),
-                "contact_person_display": (lambda cp: f"{cp['initials']} - {cp['username']}" if cp else "-")(contact_person_badge(task)),
+                "contact_persons": task.get("contact_persons", []),
+                "contact_person_display": task.get("contact_person_display", "-"),
                 "creator_name": task.get("creator_name", ""),
                 "assignees": task["assignees"],
                 "assigned_to_me": assigned_to_me,
@@ -2487,6 +2589,91 @@ def settings_page():
                 flash("Favicon wurde entfernt.", "success")
             return redirect(url_for("settings_page"))
 
+        if action == "create-floor":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Ebenen erstellen.", "error")
+                return redirect(url_for("settings_page"))
+            floor_name = request.form.get("floor_name", "").strip()
+            if not floor_name:
+                flash("Bitte einen Ebenennamen angeben.", "error")
+                return redirect(url_for("settings_page"))
+            if len(floor_name) > 40:
+                flash("Ebenenname darf maximal 40 Zeichen lang sein.", "error")
+                return redirect(url_for("settings_page"))
+            existing = query_one("SELECT id FROM room_floors WHERE lower(name) = lower(?)", (floor_name,))
+            if existing:
+                flash("Eine Ebene mit diesem Namen existiert bereits.", "error")
+                return redirect(url_for("settings_page"))
+            execute("INSERT INTO room_floors (name, created_at) VALUES (?, ?)", (floor_name, now_iso()))
+            g.pop("rooms_by_floor", None)
+            flash(f'Ebene "{floor_name}" wurde erstellt.', "success")
+            return redirect(url_for("settings_page"))
+
+        if action == "delete-floor":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Ebenen löschen.", "error")
+                return redirect(url_for("settings_page"))
+            floor_id = parse_int_value(request.form.get("floor_id"))
+            if floor_id is None:
+                flash("Ungültige Ebene.", "error")
+                return redirect(url_for("settings_page"))
+            floor = query_one("SELECT id, name FROM room_floors WHERE id = ?", (floor_id,))
+            if floor is None:
+                flash("Ebene nicht gefunden.", "error")
+                return redirect(url_for("settings_page"))
+            execute("DELETE FROM room_floors WHERE id = ?", (floor_id,))
+            g.pop("rooms_by_floor", None)
+            flash(f'Ebene "{floor["name"]}" und alle zugehörigen Räume wurden entfernt.', "success")
+            return redirect(url_for("settings_page"))
+
+        if action == "create-room":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Räume erstellen.", "error")
+                return redirect(url_for("settings_page"))
+            floor_id = parse_int_value(request.form.get("floor_id"))
+            room_name = request.form.get("room_name", "").strip()
+            if floor_id is None or not room_name:
+                flash("Bitte Ebene und Raumname angeben.", "error")
+                return redirect(url_for("settings_page"))
+            if len(room_name) > 60:
+                flash("Raumname darf maximal 60 Zeichen lang sein.", "error")
+                return redirect(url_for("settings_page"))
+            floor = query_one("SELECT id FROM room_floors WHERE id = ?", (floor_id,))
+            if floor is None:
+                flash("Ebene nicht gefunden.", "error")
+                return redirect(url_for("settings_page"))
+            existing = query_one(
+                "SELECT id FROM room_entries WHERE floor_id = ? AND lower(name) = lower(?)",
+                (floor_id, room_name),
+            )
+            if existing:
+                flash("Dieser Raum existiert auf der Ebene bereits.", "error")
+                return redirect(url_for("settings_page"))
+            execute(
+                "INSERT INTO room_entries (floor_id, name, created_at) VALUES (?, ?, ?)",
+                (floor_id, room_name, now_iso()),
+            )
+            g.pop("rooms_by_floor", None)
+            flash(f'Raum "{room_name}" wurde hinzugefügt.', "success")
+            return redirect(url_for("settings_page"))
+
+        if action == "delete-room":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Räume löschen.", "error")
+                return redirect(url_for("settings_page"))
+            room_id = parse_int_value(request.form.get("room_id"))
+            if room_id is None:
+                flash("Ungültiger Raum.", "error")
+                return redirect(url_for("settings_page"))
+            room = query_one("SELECT id, name FROM room_entries WHERE id = ?", (room_id,))
+            if room is None:
+                flash("Raum nicht gefunden.", "error")
+                return redirect(url_for("settings_page"))
+            execute("DELETE FROM room_entries WHERE id = ?", (room_id,))
+            g.pop("rooms_by_floor", None)
+            flash(f'Raum "{room["name"]}" wurde entfernt.', "success")
+            return redirect(url_for("settings_page"))
+
         flash("Unbekannte Aktion.", "error")
         return redirect(url_for("settings_page"))
 
@@ -2509,7 +2696,8 @@ def parse_task_form(form) -> tuple[dict | None, str | None]:
     priority_raw = form.get("priority", str(DEFAULT_TASK_PRIORITY)).strip()
     ticket_category = normalize_ticket_category(form.get("ticket_category", ""))
     room = form.get("room", "").strip()
-    contact_person_user_id_raw = form.get("contact_person_user_id", "").strip()
+    contact_person_ids_raw = form.getlist("contact_person_ids")
+    contact_person_custom = form.get("contact_person_custom", "").strip()
     assignee_ids_raw = form.getlist("assignee_ids")
 
     if not title or not description:
@@ -2535,26 +2723,25 @@ def parse_task_form(form) -> tuple[dict | None, str | None]:
     if priority < MIN_TASK_PRIORITY or priority > MAX_TASK_PRIORITY:
         return None, "Bitte eine gültige Priorität (1-5) auswählen."
 
-    if contact_person_user_id_raw == "other":
-        custom_name = form.get("contact_person_custom", "").strip()
-        if not custom_name:
-            return None, "Bitte einen Namen für den Ansprechpartner eingeben."
-        if len(custom_name) > 100:
-            return None, "Name des Ansprechpartners darf maximal 100 Zeichen lang sein."
-        contact_person_user_id = None
-        contact_user = {"id": None, "username": custom_name}
-    else:
-        try:
-            contact_person_user_id = int(contact_person_user_id_raw)
-        except ValueError:
-            return None, "Bitte einen gültigen Ansprechpartner auswählen."
+    contact_person_ids = []
+    for raw_id in contact_person_ids_raw:
+        cleaned = raw_id.strip()
+        if cleaned:
+            try:
+                contact_person_ids.append(int(cleaned))
+            except ValueError:
+                return None, "Ungültiger Ansprechpartner ausgewählt."
 
-        contact_user = query_one(
-            "SELECT id, username FROM users WHERE id = ? AND COALESCE(is_dashboard_invisible, 0) = 0",
-            (contact_person_user_id,),
+    contact_person_ids = sorted(set(contact_person_ids))
+    contact_users = []
+    if contact_person_ids:
+        placeholders = ",".join(["?"] * len(contact_person_ids))
+        contact_users = query_all(
+            f"SELECT id, username FROM users WHERE id IN ({placeholders}) AND COALESCE(is_dashboard_invisible, 0) = 0",
+            tuple(contact_person_ids),
         )
-        if contact_user is None:
-            return None, "Ansprechpartner nicht gefunden."
+        if len(contact_users) != len(contact_person_ids):
+            return None, "Mindestens ein Ansprechpartner wurde nicht gefunden."
 
     if due_date:
         normalized_due_date = normalize_due_date_value(due_date, due_time)
@@ -2582,6 +2769,11 @@ def parse_task_form(form) -> tuple[dict | None, str | None]:
         if len(found) != len(assignee_ids):
             return None, "Mindestens ein ausgewählter Bearbeiter existiert nicht."
 
+    if contact_person_custom and len(contact_person_custom) > 200:
+        return None, "Externe Ansprechpartner dürfen maximal 200 Zeichen lang sein."
+
+    contact_person_name = ", ".join(u["username"] for u in contact_users)
+
     return {
         "title": title,
         "description": description,
@@ -2589,8 +2781,9 @@ def parse_task_form(form) -> tuple[dict | None, str | None]:
         "priority": priority,
         "ticket_category": ticket_category,
         "room": room,
-        "contact_person_user_id": contact_person_user_id,
-        "contact_user": contact_user,
+        "contact_person_ids": contact_person_ids,
+        "contact_person_name": contact_person_name,
+        "contact_person_custom": contact_person_custom,
         "assignee_ids": assignee_ids,
     }, None
 
@@ -2610,8 +2803,9 @@ def create_task():
     priority = parsed["priority"]
     ticket_category = parsed["ticket_category"]
     room = parsed["room"]
-    contact_person_user_id = parsed["contact_person_user_id"]
-    contact_user = parsed["contact_user"]
+    contact_person_ids = parsed["contact_person_ids"]
+    contact_person_name = parsed["contact_person_name"]
+    contact_person_custom = parsed["contact_person_custom"]
     normalized_due_date = parsed["due_date"]
     assignee_ids = parsed["assignee_ids"]
 
@@ -2619,36 +2813,19 @@ def create_task():
     cur = execute(
         """
         INSERT INTO tasks (
-            title,
-            description,
-            priority,
-            assignee_id,
-            due_date,
-            contact_person,
-            contact_person_user_id,
-            ticket_category,
-            room,
-            created_by,
-            status,
-            created_at,
-            updated_at
+            title, description, priority, assignee_id, due_date,
+            contact_person, contact_person_user_id,
+            ticket_category, room, created_by, status, created_at, updated_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            title,
-            description,
-            priority,
+            title, description, priority,
             assignee_ids[0] if assignee_ids else None,
             normalized_due_date,
-            contact_user["username"],
-            contact_person_user_id,
-            ticket_category,
-            room,
-            user["id"],
-            STATUS_OPEN,
-            now,
-            now,
+            contact_person_custom,
+            contact_person_ids[0] if contact_person_ids else None,
+            ticket_category, room, user["id"], STATUS_OPEN, now, now,
         ),
     )
 
@@ -2658,8 +2835,30 @@ def create_task():
             "INSERT OR IGNORE INTO task_assignees (task_id, user_id) VALUES (?, ?)",
             (task_id, assignee_id),
         )
+    for cp_id in contact_person_ids:
+        execute(
+            "INSERT OR IGNORE INTO task_contact_persons (task_id, user_id) VALUES (?, ?)",
+            (task_id, cp_id),
+        )
 
-    log_event(user, "task_created", "Task erstellt", task_id=task_id, task_title=title)
+    create_details_parts = [
+        f"Priorität: {priority}",
+        f"Kategorie: {ticket_category_label(ticket_category)}",
+    ]
+    if normalized_due_date:
+        create_details_parts.append(f"Fällig: {format_datetime_for_display(normalized_due_date)}")
+    if assignee_ids:
+        name_rows = query_all(
+            f"SELECT username FROM users WHERE id IN ({','.join(['?'] * len(assignee_ids))})",
+            tuple(assignee_ids),
+        )
+        create_details_parts.append(f"Bearbeiter: {', '.join(r['username'] for r in name_rows)}")
+
+    log_event(
+        user, "task_created", "Task erstellt",
+        task_id=task_id, task_title=title,
+        details=", ".join(create_details_parts),
+    )
     flash("Task wurde erstellt.", "success")
     return redirect(url_for("dashboard"))
 
@@ -2751,17 +2950,9 @@ def comment_mentions_map(comment_ids: list[int]):
 def task_with_details(task_id: int):
     task = query_one(
         """
-        SELECT
-            t.*,
-            c.username AS creator_name,
-            cp.id AS contact_person_user_id,
-            cp.username AS contact_person_name,
-            cp.initials AS contact_person_initials,
-            cp.role AS contact_person_role,
-            cp.is_admin AS contact_person_is_admin
+        SELECT t.*, c.username AS creator_name
         FROM tasks t
         JOIN users c ON c.id = t.created_by
-        LEFT JOIN users cp ON cp.id = t.contact_person_user_id
         WHERE t.id = ?
         """,
         (task_id,),
@@ -2770,12 +2961,14 @@ def task_with_details(task_id: int):
         return None
 
     task_dict = dict(task)
-    contact_name = (task_dict.get("contact_person_name") or task_dict.get("contact_person") or "").strip()
-    if contact_name:
-        contact_initials = task_dict.get("contact_person_initials") or make_initials_from_username(contact_name)
-        task_dict["contact_person_display"] = f"{contact_initials} - {contact_name}"
-    else:
-        task_dict["contact_person_display"] = "-"
+    contact_persons = contact_persons_map([task_id]).get(task_id, [])
+    task_dict["contact_persons"] = contact_persons
+    parts = [cp["username"] for cp in contact_persons]
+    custom = (task_dict.get("contact_person") or "").strip()
+    if custom:
+        parts.append(custom)
+    task_dict["contact_person_display"] = ", ".join(parts) if parts else "-"
+    task_dict["contact_person_custom"] = custom
 
     assignees = task_assignees_map([task_id]).get(task_id, [])
     raw_comments = task_comments(task_id)
@@ -3088,7 +3281,7 @@ def task_detail(task_id: int):
 @login_required
 def add_task_comment(task_id: int):
     user = current_user()
-    task = query_one("SELECT id, status FROM tasks WHERE id = ?", (task_id,))
+    task = query_one("SELECT id, title, status FROM tasks WHERE id = ?", (task_id,))
     if task is None:
         flash("Task nicht gefunden.", "error")
         return redirect(url_for("dashboard"))
@@ -3152,6 +3345,12 @@ def add_task_comment(task_id: int):
             (comment_id, mention_user_id, created_at),
         )
 
+    preview = content[:80] + ("…" if len(content) > 80 else "")
+    log_event(
+        user, "comment_added", "Kommentar hinzugefügt",
+        task_id=task_id, task_title=task["title"],
+        details=preview,
+    )
     flash("Kommentar wurde gespeichert.", "success")
     return redirect(url_for("task_detail", task_id=task_id))
 
@@ -3160,7 +3359,7 @@ def add_task_comment(task_id: int):
 @login_required
 def edit_task_comment(task_id: int, comment_id: int):
     user = current_user()
-    task = query_one("SELECT id, status FROM tasks WHERE id = ?", (task_id,))
+    task = query_one("SELECT id, title, status FROM tasks WHERE id = ?", (task_id,))
     if task is None:
         flash("Task nicht gefunden.", "error")
         return redirect(url_for("dashboard"))
@@ -3194,6 +3393,10 @@ def edit_task_comment(task_id: int, comment_id: int):
         """,
         (content, now_iso(), comment_id, task_id),
     )
+    log_event(
+        user, "comment_edited", "Kommentar bearbeitet",
+        task_id=task_id, task_title=task["title"],
+    )
     flash("Kommentar wurde aktualisiert.", "success")
     return redirect(url_for("task_detail", task_id=task_id))
 
@@ -3202,7 +3405,7 @@ def edit_task_comment(task_id: int, comment_id: int):
 @login_required
 def delete_task_comment(task_id: int, comment_id: int):
     user = current_user()
-    task = query_one("SELECT id, status FROM tasks WHERE id = ?", (task_id,))
+    task = query_one("SELECT id, title, status FROM tasks WHERE id = ?", (task_id,))
     if task is None:
         flash("Task nicht gefunden.", "error")
         return redirect(url_for("dashboard"))
@@ -3224,6 +3427,10 @@ def delete_task_comment(task_id: int, comment_id: int):
         return redirect(url_for("task_detail", task_id=task_id))
 
     execute("DELETE FROM task_comments WHERE id = ? AND task_id = ?", (comment_id, task_id))
+    log_event(
+        user, "comment_deleted", "Kommentar gelöscht",
+        task_id=task_id, task_title=task["title"],
+    )
     flash("Kommentar wurde gelöscht.", "success")
     return redirect(url_for("task_detail", task_id=task_id))
 
@@ -3255,29 +3462,74 @@ def edit_task(task_id: int):
     priority = parsed["priority"]
     ticket_category = parsed["ticket_category"]
     room = parsed["room"]
-    contact_person_user_id = parsed["contact_person_user_id"]
-    contact_user = parsed["contact_user"]
+    contact_person_ids = parsed["contact_person_ids"]
+    contact_person_name = parsed["contact_person_name"]
+    contact_person_custom = parsed["contact_person_custom"]
     normalized_due_date = parsed["due_date"]
     assignee_ids = parsed["assignee_ids"]
+
+    old_assignee_rows = query_all(
+        "SELECT user_id FROM task_assignees WHERE task_id = ?", (task_id,)
+    )
+    old_assignee_ids = sorted(row["user_id"] for row in old_assignee_rows)
+    old_cp_rows = query_all(
+        "SELECT user_id FROM task_contact_persons WHERE task_id = ?", (task_id,)
+    )
+    old_cp_ids = sorted(row["user_id"] for row in old_cp_rows)
+
+    changes = []
+    if (task["title"] or "") != title:
+        changes.append("Titel geändert")
+    if (task["description"] or "") != description:
+        changes.append("Beschreibung geändert")
+    old_priority = int(task["priority"] or DEFAULT_TASK_PRIORITY)
+    if old_priority != priority:
+        changes.append(f"Priorität: {old_priority} → {priority}")
+    old_cat = (task["ticket_category"] or "").strip()
+    if old_cat != ticket_category:
+        changes.append(
+            f"Kategorie: {ticket_category_label(old_cat)} → {ticket_category_label(ticket_category)}"
+        )
+    old_room = (task["room"] or "").strip()
+    new_room = room.strip()
+    if old_room != new_room:
+        if old_room and new_room:
+            changes.append(f"Raum: {old_room} → {new_room}")
+        elif new_room:
+            changes.append(f"Raum gesetzt: {new_room}")
+        else:
+            changes.append("Raum entfernt")
+    old_due = (task["due_date"] or "").strip()
+    new_due = (normalized_due_date or "").strip()
+    if old_due != new_due:
+        if old_due and new_due:
+            changes.append(
+                f"Fälligkeit: {format_datetime_for_display(old_due)} → {format_datetime_for_display(new_due)}"
+            )
+        elif new_due:
+            changes.append(f"Fälligkeit gesetzt: {format_datetime_for_display(new_due)}")
+        else:
+            changes.append("Fälligkeit entfernt")
+    if sorted(contact_person_ids) != old_cp_ids:
+        changes.append("Ansprechpartner geändert")
+    if sorted(assignee_ids) != old_assignee_ids:
+        changes.append("Bearbeiter geändert")
+
+    edit_details = ", ".join(changes) if changes else None
 
     execute(
         """
         UPDATE tasks
-        SET title = ?, description = ?, due_date = ?, priority = ?, assignee_id = ?, contact_person = ?, contact_person_user_id = ?, ticket_category = ?, room = ?, updated_at = ?
+        SET title = ?, description = ?, due_date = ?, priority = ?, assignee_id = ?,
+            contact_person = ?, contact_person_user_id = ?, ticket_category = ?, room = ?, updated_at = ?
         WHERE id = ?
         """,
         (
-            title,
-            description,
-            normalized_due_date,
-            priority,
+            title, description, normalized_due_date, priority,
             assignee_ids[0] if assignee_ids else None,
-            contact_user["username"],
-            contact_person_user_id,
-            ticket_category,
-            room,
-            now_iso(),
-            task_id,
+            contact_person_custom,
+            contact_person_ids[0] if contact_person_ids else None,
+            ticket_category, room, now_iso(), task_id,
         ),
     )
 
@@ -3287,8 +3539,14 @@ def edit_task(task_id: int):
             "INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)",
             (task_id, assignee_id),
         )
+    execute("DELETE FROM task_contact_persons WHERE task_id = ?", (task_id,))
+    for cp_id in contact_person_ids:
+        execute(
+            "INSERT OR IGNORE INTO task_contact_persons (task_id, user_id) VALUES (?, ?)",
+            (task_id, cp_id),
+        )
 
-    log_event(user, "task_edited", "Task bearbeitet", task_id=task_id, task_title=title)
+    log_event(user, "task_edited", "Task bearbeitet", task_id=task_id, task_title=title, details=edit_details)
     flash("Task wurde aktualisiert.", "success")
     return redirect(url_for("task_detail", task_id=task_id))
 
@@ -3633,6 +3891,7 @@ def manage_users():
             )
 
             execute("DELETE FROM task_assignees WHERE user_id = ?", (target_id,))
+            execute("DELETE FROM task_contact_persons WHERE user_id = ?", (target_id,))
             execute("UPDATE tasks SET assignee_id = NULL WHERE assignee_id = ?", (target_id,))
             execute("UPDATE tasks SET closed_by = NULL WHERE closed_by = ?", (target_id,))
             execute("DELETE FROM task_comments WHERE user_id = ?", (target_id,))
@@ -3741,7 +4000,7 @@ def archive():
                 flash("Nur geschlossene Tasks können archiviert werden.", "error")
                 return redirect(url_for("archive", tab="closed"))
             execute(
-                "UPDATE tasks SET is_archived = 1, updated_at = ? WHERE id = ?",
+                "UPDATE tasks SET is_archived = 1, contact_person = '', contact_person_user_id = NULL, updated_at = ? WHERE id = ?",
                 (now_iso(), task_id_raw),
             )
             log_event(user, "task_archived", "Task archiviert", task_id=int(task_id_raw), task_title=task["title"])
@@ -3771,8 +4030,8 @@ def archive():
 
     cleanup_old_log_entries()
 
-    closed_tasks = enrich_tasks_with_assignees(fetch_tasks(status=STATUS_CLOSED))
-    archived_tasks = enrich_tasks_with_assignees(fetch_tasks(archived_only=True))
+    closed_tasks = enrich_tasks_with_contact_persons(enrich_tasks_with_assignees(fetch_tasks(status=STATUS_CLOSED)))
+    archived_tasks = enrich_tasks_with_contact_persons(enrich_tasks_with_assignees(fetch_tasks(archived_only=True)))
     log_entries = query_all(
         """
         SELECT id, actor_name, event_type, description, task_id, task_title, details, created_at
