@@ -230,8 +230,6 @@ THEME_LIGHT = "light"
 THEME_DARK = "dark"
 VALID_THEME_MODES = {THEME_LIGHT, THEME_DARK}
 CARD_VIEW_COMPACT = "compact"
-CARD_VIEW_EXTENDED = "extended"
-VALID_CARD_VIEW_MODES = {CARD_VIEW_COMPACT, CARD_VIEW_EXTENDED}
 MEMBER_TYPE_REGULAR = "regular"
 MEMBER_TYPE_TRAINEE = "trainee"
 VALID_MEMBER_TYPES = {MEMBER_TYPE_REGULAR, MEMBER_TYPE_TRAINEE}
@@ -373,11 +371,6 @@ def init_db() -> None:
             created_at TEXT NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS disabled_roles (
-            role_key TEXT PRIMARY KEY,
-            created_at TEXT NOT NULL
-        );
-
         CREATE TABLE IF NOT EXISTS ticket_categories (
             category_key TEXT PRIMARY KEY,
             label TEXT NOT NULL UNIQUE,
@@ -455,14 +448,6 @@ def init_db() -> None:
     comment_columns = {row["name"] for row in db.execute("PRAGMA table_info(task_comments)").fetchall()}
     if "updated_at" not in comment_columns:
         db.execute("ALTER TABLE task_comments ADD COLUMN updated_at TEXT")
-
-    db.execute(
-        """
-        UPDATE tasks
-        SET due_date = substr(created_at, 1, 16)
-        WHERE due_date IS NULL OR TRIM(due_date) = ''
-        """
-    )
 
     db.execute(
         """
@@ -866,16 +851,6 @@ def role_options() -> list[dict]:
             "is_admin": bool(role["is_admin"]),
         })
     return options
-
-
-def normalize_role(value: str) -> str:
-    if value == "admin":
-        return "admin"
-    if value == "user":
-        return "user"
-    if value in custom_roles_map():
-        return value
-    return ""
 
 
 def resolve_role_assignment(role_value: str) -> tuple[int, str]:
@@ -2704,11 +2679,6 @@ def is_task_creator(user, task_id: int) -> bool:
     return bool(row is not None and row["created_by"] == user["id"])
 
 
-def can_access_task_detail(user, task_id: int) -> bool:
-    _ = task_id
-    return user is not None
-
-
 def can_edit_task_content(user, task_id: int) -> bool:
     task = query_one("SELECT status FROM tasks WHERE id = ?", (task_id,))
     if task is None:
@@ -3092,10 +3062,6 @@ def task_detail(task_id: int):
     task = task_with_details(task_id)
     if task is None:
         flash("Task nicht gefunden.", "error")
-        return redirect(url_for("dashboard"))
-
-    if not can_access_task_detail(user, task_id):
-        flash("Du bist dieser Task nicht zugewiesen.", "error")
         return redirect(url_for("dashboard"))
 
     users = query_all(
