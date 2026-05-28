@@ -124,8 +124,8 @@
     <label>Uhrzeit (optional)
       <input type="time" name="due_time" value="{{ due_time_input_value(task['due_date']) }}">
     </label>
-    <div class="actions-row">
-      <button type="submit">Änderungen speichern</button>
+    <div class="full" style="display:flex; justify-content:flex-end; margin-top:4px;">
+      <button type="submit" style="padding:12px 22px; font-size:1rem;">Änderungen speichern</button>
     </div>
   </form>
 </section>
@@ -141,8 +141,8 @@
     </label>
     <input type="hidden" id="mention-user-ids" name="mention_user_ids" value="">
     <div class="actions-row">
-      <button type="submit">Kommentar senden</button>
-      <button type="button" class="secondary" id="mention-user-btn">Markieren</button>
+      <button type="submit" class="small-btn">Kommentar senden</button>
+      <button type="button" class="secondary small-btn" id="mention-user-btn">Markieren</button>
     </div>
     <div id="mention-selected-wrap" class="full" hidden>
       <small class="task-view-label">Markierte Personen:</small>
