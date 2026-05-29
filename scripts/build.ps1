@@ -47,6 +47,10 @@ if (Test-Path $SpecFile) { Remove-Item $SpecFile -Force }
 
 Write-Host "   Fertig." -ForegroundColor Green
 
+# ── Icon mit festem Namen kopieren ───────────────────────
+$TrayIcon = "_tray.ico"
+Copy-Item $IconFile $TrayIcon
+
 # ── EXE erstellen ─────────────────────────────────────────
 Write-Host ""
 Write-Host ">> EXE wird erstellt (kann einige Minuten dauern)..." -ForegroundColor Yellow
@@ -58,7 +62,7 @@ python -m PyInstaller app.py `
     --add-data "templates;templates" `
     --add-data "static;static" `
     --add-data "config.ini;." `
-    --add-data "$IconFile;." `
+    --add-data "$TrayIcon;." `
     --hidden-import zoneinfo `
     --collect-data tzdata `
     --hidden-import flask `
@@ -69,6 +73,9 @@ python -m PyInstaller app.py `
     --noconsole `
     --icon $IconFile `
     --version-file "version.txt"
+
+# ── Temporaere Icon-Kopie entfernen ───────────────────────
+Remove-Item $TrayIcon -ErrorAction SilentlyContinue
 
 # ── Ergebnis pruefen ──────────────────────────────────────
 Write-Host ""
