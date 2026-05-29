@@ -8,12 +8,12 @@ VSVersionInfo(
       StringTable(
         u'040904B0',
         [
-          StringStruct(u'CompanyName', u'Ticket-System'),
+          StringStruct(u'CompanyName', u'vilunacode'),
           StringStruct(u'FileDescription', u'Browserbasierter Task-Manager'),
           StringStruct(u'FileVersion', u'1.0.0'),
           StringStruct(u'ProductName', u'Ticket-System'),
           StringStruct(u'ProductVersion', u'1.0.0'),
-          StringStruct(u'LegalCopyright', u'vilunacode'),
+          StringStruct(u'LegalCopyright', u'Made by vilunacode'),
         ]
       )
     ]),
