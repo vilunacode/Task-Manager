@@ -62,7 +62,7 @@ SCHRITT 5 – Abhängigkeiten installieren
 SCHRITT 6 – PyInstaller und tzdata installieren
 ------------------------------------------------------------
 
-  pip install pyinstaller tzdata
+  pip install pyinstaller tzdata pystray Pillow
 
 
 ------------------------------------------------------------
@@ -84,7 +84,7 @@ SCHRITT 8 – EXE generieren
 
 Folgenden Befehl als eine einzelne Zeile eingeben:
 
-  python -m PyInstaller app.py --onefile --name Ticket-System --add-data "templates;templates" --add-data "static;static" --add-data "config.ini;." --hidden-import zoneinfo --collect-data tzdata --hidden-import flask --hidden-import werkzeug --hidden-import tkinter --noconsole --icon "thp_large.ico" --version-file "version.txt"
+  python -m PyInstaller app.py --onefile --name Ticket-System --add-data "templates;templates" --add-data "static;static" --add-data "config.ini;." --add-data "thp_large.ico;." --hidden-import zoneinfo --collect-data tzdata --hidden-import flask --hidden-import werkzeug --hidden-import tkinter --hidden-import pystray --hidden-import PIL --noconsole --icon "thp_large.ico" --version-file "version.txt"
 
 Der Vorgang kann einige Minuten dauern.
 

@@ -4118,10 +4118,39 @@ if __name__ == "__main__":
         import threading
         import time
         import tkinter
+        import webbrowser
         from tkinter import messagebox
+
+        import pystray
+        from PIL import Image
 
         _display_host = "127.0.0.1" if _host == "0.0.0.0" else _host
         _url = f"http://{_display_host}:{_port}"
+
+        # Tray-Icon laden
+        _icon_path = os.path.join(_BUNDLE_DIR, "thp_large.ico")
+        try:
+            _tray_image = Image.open(_icon_path)
+        except Exception:
+            _tray_image = Image.new("RGBA", (64, 64), (59, 130, 246, 255))
+
+        def _on_open(icon, item):
+            webbrowser.open(_url)
+
+        def _on_stop(icon, item):
+            icon.stop()
+            os._exit(0)
+
+        _tray_icon = pystray.Icon(
+            "Ticket-System",
+            _tray_image,
+            "Ticket-System läuft",
+            menu=pystray.Menu(
+                pystray.MenuItem("Im Browser öffnen", _on_open),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("Beenden", _on_stop),
+            ),
+        )
 
         def _show_startup_popup():
             deadline = time.time() + 15
@@ -4150,6 +4179,10 @@ if __name__ == "__main__":
             root.destroy()
 
         threading.Thread(target=_show_startup_popup, daemon=True).start()
-        app.run(host=_host, port=_port, debug=False, use_reloader=False)
+        threading.Thread(
+            target=lambda: app.run(host=_host, port=_port, debug=False, use_reloader=False),
+            daemon=True,
+        ).start()
+        _tray_icon.run()
     else:
         app.run(host=_host, port=_port, debug=_debug)
