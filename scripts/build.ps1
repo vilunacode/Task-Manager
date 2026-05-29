@@ -6,17 +6,41 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path $PSScriptRoot
 Set-Location $ProjectRoot
 
-$AppName   = "Ticket-System"
-$IconFile  = "thp_large.ico"
-$DistDir   = "dist"
-$BuildDir  = "build"
-$SpecFile  = "$AppName.spec"
-
 Write-Host ""
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host "  Ticket-System EXE-Builder" -ForegroundColor Cyan
 Write-Host "============================================" -ForegroundColor Cyan
 Write-Host ""
+
+# ── Benutzereingaben ──────────────────────────────────────
+$AppName = Read-Host ">> App-Name (Enter fuer 'Ticket-System')"
+if ([string]::IsNullOrWhiteSpace($AppName)) { $AppName = "Ticket-System" }
+
+Write-Host ""
+$IcoFiles = Get-ChildItem -Path $ProjectRoot -Filter "*.ico" | Select-Object -ExpandProperty Name
+if ($IcoFiles.Count -gt 0) {
+    Write-Host "   Verfuegbare Icon-Dateien:" -ForegroundColor DarkGray
+    $IcoFiles | ForEach-Object { Write-Host "   - $_" -ForegroundColor DarkGray }
+    Write-Host ""
+}
+$IconFile = Read-Host ">> Icon-Datei (Enter fuer 'ts.ico')"
+if ([string]::IsNullOrWhiteSpace($IconFile)) { $IconFile = "ts.ico" }
+
+if (-not (Test-Path $IconFile)) {
+    Write-Host ""
+    Write-Host "   FEHLER: '$IconFile' nicht gefunden." -ForegroundColor Red
+    Read-Host "Druecke Enter zum Beenden"
+    exit 1
+}
+
+Write-Host ""
+Write-Host "   App-Name : $AppName" -ForegroundColor Green
+Write-Host "   Icon     : $IconFile" -ForegroundColor Green
+Write-Host ""
+
+$DistDir   = "dist"
+$BuildDir  = "build"
+$SpecFile  = "$AppName.spec"
 
 # ── Python pruefen ────────────────────────────────────────
 Write-Host ">> Python pruefen..." -ForegroundColor Yellow
