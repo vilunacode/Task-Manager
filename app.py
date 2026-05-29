@@ -4109,8 +4109,47 @@ with app.app_context():
 
 
 if __name__ == "__main__":
-    app.run(
-        host=RUNTIME_CONFIG["host"],
-        port=RUNTIME_CONFIG["port"],
-        debug=RUNTIME_CONFIG["debug"],
-    )
+    _host = RUNTIME_CONFIG["host"]
+    _port = RUNTIME_CONFIG["port"]
+    _debug = RUNTIME_CONFIG["debug"]
+
+    if getattr(sys, "frozen", False):
+        import socket
+        import threading
+        import time
+        import tkinter
+        from tkinter import messagebox
+
+        _display_host = "127.0.0.1" if _host == "0.0.0.0" else _host
+        _url = f"http://{_display_host}:{_port}"
+
+        def _show_startup_popup():
+            deadline = time.time() + 15
+            ready = False
+            while time.time() < deadline:
+                try:
+                    with socket.create_connection((_display_host, _port), timeout=0.5):
+                        ready = True
+                        break
+                except OSError:
+                    time.sleep(0.2)
+
+            root = tkinter.Tk()
+            root.withdraw()
+            if ready:
+                messagebox.showinfo(
+                    "Ticket-System gestartet",
+                    f"Der Dienst wurde erfolgreich gestartet.\n\nWebseite erreichbar unter:\n{_url}",
+                )
+            else:
+                messagebox.showerror(
+                    "Fehler beim Starten",
+                    f"Der Dienst konnte nicht gestartet werden.\n\n"
+                    f"Mögliche Ursache: Port {_port} ist bereits belegt.",
+                )
+            root.destroy()
+
+        threading.Thread(target=_show_startup_popup, daemon=True).start()
+        app.run(host=_host, port=_port, debug=False, use_reloader=False)
+    else:
+        app.run(host=_host, port=_port, debug=_debug)
