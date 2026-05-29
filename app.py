@@ -1,4 +1,5 @@
 import os
+import sys
 import calendar as pycalendar
 import configparser
 import re
@@ -21,7 +22,12 @@ from flask import (
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+if getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(sys.executable)
+    _BUNDLE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+    _BUNDLE_DIR = BASE_DIR
 DEFAULT_CONFIG_FILENAME = "config.ini"
 DEFAULT_DATABASE_FILENAME = "task_manager.db"
 SUPPORTED_DATABASE_DRIVERS = {"sqlite", "postgres", "postgresql", "mysql", "mariadb"}
@@ -239,7 +245,11 @@ MAX_TASK_DESCRIPTION_LENGTH = 5000
 MAX_TASK_ROOM_LENGTH = 100
 
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=os.path.join(_BUNDLE_DIR, "templates"),
+    static_folder=os.path.join(_BUNDLE_DIR, "static"),
+)
 app.config["SECRET_KEY"] = RUNTIME_CONFIG["secret_key"]
 try:
     APP_TIMEZONE = ZoneInfo(RUNTIME_CONFIG["timezone_name"])
