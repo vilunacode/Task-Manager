@@ -120,4 +120,11 @@ if (Test-Path $ExePath) {
 }
 
 Write-Host ""
+Write-Host ">> Icon-Cache leeren..." -ForegroundColor Yellow
+$ErrorActionPreference = "Continue"
+ie4uinit.exe -show 2>$null
+$ErrorActionPreference = "Stop"
+Write-Host "   Fertig. Falls das Icon im Explorer noch falsch angezeigt wird, bitte den Explorer neu starten." -ForegroundColor DarkGray
+
+Write-Host ""
 Read-Host "Druecke Enter zum Beenden"
