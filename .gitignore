@@ -1,4 +1,9 @@
 __pycache__/
 *.pyc
-task_manager.db
+*.db
+*.db.bak
 .venv/
+dist/
+build/
+*.spec
+*.exe

@@ -26,7 +26,7 @@
             "type": "shell",
             "command": "bash",
             "args": [
-                "${workspaceFolder}/publish.sh"
+                "${workspaceFolder}/scripts/publish.sh"
             ],
             "windows": {
                 "command": "powershell",
@@ -34,7 +34,7 @@
                     "-ExecutionPolicy",
                     "Bypass",
                     "-File",
-                    "${workspaceFolder}/publish.ps1"
+                    "${workspaceFolder}/scripts/publish.ps1"
                 ]
             },
             "group": {

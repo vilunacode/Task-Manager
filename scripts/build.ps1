@@ -1,8 +1,8 @@
 # EXE-Build-Script fuer Ticket-System
-# Ausfuehren mit: .\build.ps1
-# Oder per Doppelklick auf build.bat
+# Ausfuehren mit: Doppelklick auf build.bat im Projektordner
 
-Set-Location $PSScriptRoot
+$ProjectRoot = Split-Path $PSScriptRoot
+Set-Location $ProjectRoot
 
 $AppName   = "Ticket-System"
 $IconFile  = "thp_large.ico"
