@@ -1,6 +1,8 @@
 # EXE-Build-Script fuer Ticket-System
 # Ausfuehren mit: Doppelklick auf build.bat im Projektordner
 
+$ErrorActionPreference = "Stop"
+
 $ProjectRoot = Split-Path $PSScriptRoot
 Set-Location $ProjectRoot
 
@@ -18,20 +20,21 @@ Write-Host ""
 
 # ── Python pruefen ────────────────────────────────────────
 Write-Host ">> Python pruefen..." -ForegroundColor Yellow
-try {
-    $pythonVersion = python --version 2>&1
-    Write-Host "   $pythonVersion gefunden." -ForegroundColor Green
-} catch {
-    Write-Host "   FEHLER: Python nicht gefunden. Bitte Python installieren." -ForegroundColor Red
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    Write-Host "   FEHLER: Python nicht gefunden. Bitte Python installieren und PATH pruefen." -ForegroundColor Red
     Read-Host "Druecke Enter zum Beenden"
     exit 1
 }
+$pythonVersion = python --version 2>&1
+Write-Host "   $pythonVersion gefunden." -ForegroundColor Green
 
 # ── Abhaengigkeiten installieren ──────────────────────────
 Write-Host ""
 Write-Host ">> Abhaengigkeiten installieren..." -ForegroundColor Yellow
-pip install -r requirements.txt --quiet
-pip install pyinstaller tzdata pystray Pillow --quiet
+$ErrorActionPreference = "Continue"
+python -m pip install -r requirements.txt --quiet
+python -m pip install pyinstaller tzdata pystray Pillow --quiet
+$ErrorActionPreference = "Stop"
 Write-Host "   Fertig." -ForegroundColor Green
 
 # ── Alte Build-Artefakte bereinigen ───────────────────────
