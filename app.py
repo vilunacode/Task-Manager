@@ -23,7 +23,7 @@ from flask import (
 from werkzeug.security import check_password_hash, generate_password_hash
 
 if getattr(sys, "frozen", False):
-    BASE_DIR = os.path.dirname(sys.executable)
+    BASE_DIR = os.path.abspath(os.path.dirname(sys.executable))
     _BUNDLE_DIR = sys._MEIPASS
 else:
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -148,10 +148,51 @@ def load_database_config(parser: configparser.ConfigParser, base_dir: str) -> di
     }
 
 
+_DEFAULT_CONFIG_CONTENT = """\
+; Task Manager configuration
+; Values from environment variables can still override these settings.
+
+[server]
+; 0.0.0.0 = reachable from network, 127.0.0.1 = local only.
+host = 0.0.0.0
+
+; Port of the web app.
+port = 5000
+
+; true/false - set false in production.
+debug = false
+
+[app]
+; Change this to a long random string in production.
+secret_key = dev-secret-change-me
+
+; Time zone used in date/time display.
+timezone = Europe/Berlin
+
+[database]
+; Driver: sqlite, postgres, postgresql, mysql, mariadb
+driver = sqlite
+
+; Optional sqlite file path (only relevant when driver=sqlite)
+path = task_manager.db
+"""
+
+
+def _ensure_default_config(config_file_path: str) -> None:
+    if not os.path.exists(config_file_path):
+        try:
+            with open(config_file_path, "w", encoding="utf-8") as f:
+                f.write(_DEFAULT_CONFIG_CONTENT)
+        except OSError:
+            pass
+
+
 def load_runtime_config(base_dir: str) -> dict:
     config_file_path = os.environ.get("TASK_MANAGER_CONFIG", "").strip() or os.path.join(
         base_dir, DEFAULT_CONFIG_FILENAME
     )
+
+    _ensure_default_config(config_file_path)
 
     parser = configparser.ConfigParser()
     if os.path.exists(config_file_path):
