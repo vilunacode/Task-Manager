@@ -34,20 +34,6 @@ pip install -r requirements.txt --quiet
 pip install pyinstaller tzdata pystray Pillow --quiet
 Write-Host "   Fertig." -ForegroundColor Green
 
-# ── PNG zu ICO konvertieren falls noetig ──────────────────
-$IcoFileForExe = $IconFile
-if ($IconFile -match '\.png$') {
-    Write-Host ""
-    Write-Host ">> PNG erkannt – konvertiere zu ICO fuer EXE-Icon..." -ForegroundColor Yellow
-    $IcoFileForExe = [System.IO.Path]::ChangeExtension($IconFile, "ico")
-    python -c "
-from PIL import Image
-img = Image.open('$IconFile').convert('RGBA')
-img.save('$IcoFileForExe', format='ICO', sizes=[(256,256),(128,128),(64,64),(32,32),(16,16)])
-"
-    Write-Host "   Gespeichert als: $IcoFileForExe" -ForegroundColor Green
-}
-
 # ── Alte Build-Artefakte bereinigen ───────────────────────
 Write-Host ""
 Write-Host ">> Alte Build-Dateien bereinigen..." -ForegroundColor Yellow
@@ -78,7 +64,7 @@ python -m PyInstaller app.py `
     --hidden-import pystray `
     --hidden-import PIL `
     --noconsole `
-    --icon $IcoFileForExe `
+    --icon $IconFile `
     --version-file "version.txt"
 
 # ── Ergebnis pruefen ──────────────────────────────────────

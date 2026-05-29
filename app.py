@@ -4127,12 +4127,9 @@ if __name__ == "__main__":
         _display_host = "127.0.0.1" if _host == "0.0.0.0" else _host
         _url = f"http://{_display_host}:{_port}"
 
-        # Tray-Icon laden – sucht nach .ico, dann .png als Fallback
+        # Tray-Icon laden – nimmt automatisch die erste .ico-Datei im Bundle
         import glob
-        _ico_candidates = (
-            glob.glob(os.path.join(_BUNDLE_DIR, "*.ico"))
-            or glob.glob(os.path.join(_BUNDLE_DIR, "*.png"))
-        )
+        _ico_candidates = glob.glob(os.path.join(_BUNDLE_DIR, "*.ico"))
         try:
             _tray_image = Image.open(_ico_candidates[0])
         except Exception:
