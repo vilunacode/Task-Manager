@@ -4127,6 +4127,18 @@ if __name__ == "__main__":
         _display_host = "127.0.0.1" if _host == "0.0.0.0" else _host
         _url = f"http://{_display_host}:{_port}"
 
+        # Prüfen ob der Dienst bereits läuft
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _s:
+            if _s.connect_ex((_display_host, _port)) == 0:
+                root = tkinter.Tk()
+                root.withdraw()
+                messagebox.showwarning(
+                    "Dienst läuft bereits",
+                    f"Der Dienst läuft bereits.\n\nWebseite erreichbar unter:\n{_url}",
+                )
+                root.destroy()
+                os._exit(0)
+
         # Tray-Icon laden
         try:
             _tray_image = Image.open(os.path.join(_BUNDLE_DIR, "_tray.ico"))
