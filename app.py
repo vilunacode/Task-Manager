@@ -4127,10 +4127,11 @@ if __name__ == "__main__":
         _display_host = "127.0.0.1" if _host == "0.0.0.0" else _host
         _url = f"http://{_display_host}:{_port}"
 
-        # Tray-Icon laden
-        _icon_path = os.path.join(_BUNDLE_DIR, "thp_large.ico")
+        # Tray-Icon laden – nimmt automatisch die erste .ico-Datei im Bundle
+        import glob
+        _ico_candidates = glob.glob(os.path.join(_BUNDLE_DIR, "*.ico"))
         try:
-            _tray_image = Image.open(_icon_path)
+            _tray_image = Image.open(_ico_candidates[0])
         except Exception:
             _tray_image = Image.new("RGBA", (64, 64), (59, 130, 246, 255))
 
