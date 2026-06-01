@@ -41,6 +41,9 @@
     <label>Live-Refresh Intervall (Sek.)
       <input type="number" min="1" max="60" name="overview_refresh_interval_seconds" value="{{ settings['overview_refresh_interval_seconds'] }}" required>
     </label>
+    <label>Fristlöschungsintervall (Sek.)
+      <input type="number" min="1" max="{{ 365 * 24 * 3600 }}" name="log_retention_seconds" value="{{ settings['log_retention_seconds'] }}" required>
+    </label>
 
     <label>Ton bei neuer Task
       <select name="new_task_tone" required>
@@ -68,7 +71,7 @@
     <span class="muted">{{ settings['favicon_filename'] }}</span>
     <form method="post">
       <input type="hidden" name="action" value="delete-favicon">
-      <button type="submit" class="danger small-btn">Entfernen</button>
+      <button type="submit" class="danger small-btn" title="Entfernen"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
     </form>
   </div>
   {% endif %}
@@ -109,7 +112,7 @@
         <tr>
           <td>{{ cat['label'] }}</td>
           <td>
-            <button type="button" class="danger" onclick="openDeleteCategoryConfirm('{{ cat.category_key }}')">Entfernen</button>
+            <button type="button" class="danger" title="Entfernen" onclick="openDeleteCategoryConfirm('{{ cat.category_key }}')"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
           </td>
         </tr>
         {% endfor %}
@@ -145,7 +148,7 @@
           <strong>{{ floor.name }}</strong>
           <span class="muted" style="font-size:0.82rem;">({{ floor.rooms | length }} Räume)</span>
         </span>
-        <button type="button" class="danger small-btn" onclick="event.preventDefault(); openDeleteFloorConfirm({{ floor.id }}, '{{ floor.name | e }}')">Ebene löschen</button>
+        <button type="button" class="danger small-btn" title="Ebene löschen" onclick="event.preventDefault(); openDeleteFloorConfirm({{ floor.id }}, '{{ floor.name | e }}')"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
       </summary>
 
       <div style="padding:0 14px 14px;">
@@ -195,7 +198,7 @@
     <input type="hidden" name="action" value="delete-floor">
     <input type="hidden" name="floor_id" id="delete-floor-id" value="">
     <div class="compact-actions">
-      <button type="submit" class="danger">Ja, löschen</button>
+      <button type="submit" class="danger" title="Ja, löschen"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
       <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
     </div>
   </form>
@@ -210,7 +213,7 @@
     <input type="hidden" name="action" value="delete-category">
     <input type="hidden" name="category_key" id="delete-category-key" value="">
     <div class="compact-actions">
-      <button type="submit" class="danger">Ja, entfernen</button>
+      <button type="submit" class="danger" title="Ja, entfernen"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
       <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
     </div>
   </form>

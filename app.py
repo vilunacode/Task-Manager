@@ -261,6 +261,7 @@ DEFAULT_APP_SETTINGS = {
     "calendar_disabled": "0",
     "favicon_filename": "",
     "site_name": "Task Manager",
+    "log_retention_seconds": str(7 * 24 * 3600),
 }
 
 FAVICON_ALLOWED_EXTENSIONS = {"ico", "png", "jpg", "jpeg", "svg"}
@@ -511,14 +512,38 @@ def init_db() -> None:
         db.execute(f"ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT {DEFAULT_TASK_PRIORITY}")
     if "is_archived" not in task_columns:
         db.execute("ALTER TABLE tasks ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0")
+    if "archived_at" not in task_columns:
+        db.execute("ALTER TABLE tasks ADD COLUMN archived_at TEXT")
+        db.execute("UPDATE tasks SET archived_at = updated_at WHERE is_archived = 1")
+    if "is_anonymized" not in task_columns:
+        db.execute("ALTER TABLE tasks ADD COLUMN is_anonymized INTEGER NOT NULL DEFAULT 0")
 
     custom_role_columns = {row["name"] for row in db.execute("PRAGMA table_info(custom_roles)").fetchall()}
     if "is_admin" not in custom_role_columns:
         db.execute("ALTER TABLE custom_roles ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
 
-    comment_columns = {row["name"] for row in db.execute("PRAGMA table_info(task_comments)").fetchall()}
-    if "updated_at" not in comment_columns:
+    comment_col_info = {row["name"]: row for row in db.execute("PRAGMA table_info(task_comments)").fetchall()}
+    if "updated_at" not in comment_col_info:
         db.execute("ALTER TABLE task_comments ADD COLUMN updated_at TEXT")
+    if comment_col_info.get("user_id", {})["notnull"]:
+        db.execute("PRAGMA foreign_keys = OFF")
+        db.execute("""
+            CREATE TABLE task_comments_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL,
+                user_id INTEGER,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT,
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        """)
+        db.execute("INSERT INTO task_comments_new SELECT * FROM task_comments")
+        db.execute("DROP TABLE task_comments")
+        db.execute("ALTER TABLE task_comments_new RENAME TO task_comments")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id)")
+        db.execute("PRAGMA foreign_keys = ON")
 
     db.execute(
         """
@@ -714,12 +739,43 @@ def log_event(
     )
 
 
-LOG_RETENTION_DAYS = 7
-
-
 def cleanup_old_log_entries() -> None:
-    cutoff = (datetime.now().astimezone().replace(microsecond=0) - timedelta(days=LOG_RETENTION_DAYS)).isoformat()
+    seconds = int(app_settings().get("log_retention_seconds", DEFAULT_APP_SETTINGS["log_retention_seconds"]))
+    cutoff = (datetime.now().astimezone().replace(microsecond=0) - timedelta(seconds=seconds)).isoformat()
     execute("DELETE FROM activity_log WHERE created_at < ?", (cutoff,))
+
+
+def anonymize_old_archived_tasks() -> None:
+    seconds = int(app_settings().get("log_retention_seconds", DEFAULT_APP_SETTINGS["log_retention_seconds"]))
+    cutoff = (datetime.now().astimezone().replace(microsecond=0) - timedelta(seconds=seconds)).isoformat()
+    tasks_to_anonymize = query_all(
+        """
+        SELECT id FROM tasks
+        WHERE is_archived = 1
+          AND archived_at IS NOT NULL
+          AND archived_at <= ?
+          AND (
+            is_anonymized = 0
+            OR EXISTS (
+              SELECT 1 FROM task_comments WHERE task_id = tasks.id AND user_id IS NOT NULL
+            )
+          )
+        """,
+        (cutoff,),
+    )
+    for task in tasks_to_anonymize:
+        task_id = task["id"]
+        execute("DELETE FROM task_contact_persons WHERE task_id = ?", (task_id,))
+        execute("DELETE FROM task_assignees WHERE task_id = ?", (task_id,))
+        execute(
+            "DELETE FROM task_comment_mentions WHERE comment_id IN (SELECT id FROM task_comments WHERE task_id = ?)",
+            (task_id,),
+        )
+        execute("UPDATE task_comments SET user_id = NULL WHERE task_id = ?", (task_id,))
+        execute(
+            "UPDATE tasks SET contact_person = '', contact_person_user_id = NULL, assignee_id = NULL, due_date = NULL, is_anonymized = 1 WHERE id = ?",
+            (task_id,),
+        )
 
 
 def app_settings() -> dict[str, str]:
@@ -2517,11 +2573,21 @@ def settings_page():
             if not site_name:
                 site_name = DEFAULT_APP_SETTINGS["site_name"]
 
+            log_retention_seconds = parse_int_setting(
+                request.form.get("log_retention_seconds", ""),
+                min_value=1,
+                max_value=365 * 24 * 3600,
+            )
+            if log_retention_seconds is None:
+                flash("Mindestens ein Zahlenwert ist ungültig oder außerhalb des erlaubten Bereichs.", "error")
+                return redirect(url_for("settings_page"))
+
             set_app_setting("new_task_highlight_seconds", str(highlight_seconds))
             set_app_setting("overview_refresh_interval_seconds", str(refresh_seconds))
             set_app_setting("new_task_tone", new_task_tone)
             set_app_setting("calendar_disabled", calendar_disabled)
             set_app_setting("site_name", site_name)
+            set_app_setting("log_retention_seconds", str(log_retention_seconds))
 
             flash("Einstellungen wurden gespeichert.", "success")
             return redirect(url_for("settings_page"))
@@ -2954,7 +3020,7 @@ def task_comments(task_id: int):
             u.role,
             u.is_admin
         FROM task_comments tc
-        JOIN users u ON u.id = tc.user_id
+        LEFT JOIN users u ON u.id = tc.user_id
         WHERE tc.task_id = ?
         ORDER BY tc.created_at DESC
         """,
@@ -3029,6 +3095,7 @@ def task_with_details(task_id: int):
         created_at = format_system_datetime_for_display(comment["created_at"])
         updated_raw = comment["updated_at"]
         updated_at = format_system_datetime_for_display(updated_raw) if updated_raw else ""
+        is_anon = comment["user_id"] is None
         comments.append(
             {
                 "id": comment["id"],
@@ -3037,11 +3104,11 @@ def task_with_details(task_id: int):
                 "created_at": created_at,
                 "updated_at": updated_at,
                 "is_edited": bool(updated_raw),
-                "username": comment["username"],
-                "initials": comment["initials"] or make_initials_from_username(comment["username"]),
-                "role_label": role_label(comment["role"], comment["is_admin"]),
-                "color_class": badge_color_class(comment["role"], comment["is_admin"]),
-                "mentions": mentions_by_comment_id.get(int(comment["id"]), []),
+                "username": "Anonymisiert" if is_anon else comment["username"],
+                "initials": "?" if is_anon else (comment["initials"] or make_initials_from_username(comment["username"])),
+                "role_label": "" if is_anon else role_label(comment["role"], comment["is_admin"]),
+                "color_class": "badge-anon" if is_anon else badge_color_class(comment["role"], comment["is_admin"]),
+                "mentions": [] if is_anon else mentions_by_comment_id.get(int(comment["id"]), []),
             }
         )
 
@@ -4019,6 +4086,12 @@ def archive():
 
     if request.method == "POST":
         action = request.form.get("action", "").strip()
+
+        if action == "clear_logs":
+            execute("DELETE FROM activity_log")
+            flash("Protokoll wurde geleert.", "success")
+            return redirect(url_for("archive", tab="log"))
+
         task_id_raw = request.form.get("task_id", "").strip()
         return_tab = request.form.get("return_tab", "closed").strip().lower()
         if return_tab not in {"closed", "archived"}:
@@ -4051,8 +4124,8 @@ def archive():
                 flash("Nur geschlossene Tasks können archiviert werden.", "error")
                 return redirect(url_for("archive", tab="closed"))
             execute(
-                "UPDATE tasks SET is_archived = 1, contact_person = '', contact_person_user_id = NULL, updated_at = ? WHERE id = ?",
-                (now_iso(), task_id_raw),
+                "UPDATE tasks SET is_archived = 1, archived_at = ?, contact_person = '', contact_person_user_id = NULL, updated_at = ? WHERE id = ?",
+                (now_iso(), now_iso(), task_id_raw),
             )
             log_event(user, "task_archived", "Task archiviert", task_id=int(task_id_raw), task_title=task["title"])
             flash("Task wurde archiviert.", "success")
@@ -4062,8 +4135,11 @@ def archive():
             if not task["is_archived"]:
                 flash("Dieser Task ist nicht archiviert.", "error")
                 return redirect(url_for("archive", tab="archived"))
+            if task["is_anonymized"]:
+                flash("Anonymisierte Tasks können nicht wiederhergestellt werden.", "error")
+                return redirect(url_for("archive", tab="archived"))
             execute(
-                "UPDATE tasks SET is_archived = 0, updated_at = ? WHERE id = ?",
+                "UPDATE tasks SET is_archived = 0, archived_at = NULL, is_anonymized = 0, updated_at = ? WHERE id = ?",
                 (now_iso(), task_id_raw),
             )
             log_event(user, "task_unarchived", "Task aus Archiv zurückgesetzt", task_id=int(task_id_raw), task_title=task["title"])
@@ -4080,6 +4156,7 @@ def archive():
         return redirect(url_for("archive", tab=return_tab))
 
     cleanup_old_log_entries()
+    anonymize_old_archived_tasks()
 
     closed_tasks = enrich_tasks_with_contact_persons(enrich_tasks_with_assignees(fetch_tasks(status=STATUS_CLOSED)))
     archived_tasks = enrich_tasks_with_contact_persons(enrich_tasks_with_assignees(fetch_tasks(archived_only=True)))
@@ -4092,12 +4169,13 @@ def archive():
         """
     )
 
+    settings = app_settings()
     return render_template(
         "archive.html",
         tasks=closed_tasks,
         archived_tasks=archived_tasks,
         log_entries=log_entries,
-        log_retention_days=LOG_RETENTION_DAYS,
+        log_retention_seconds=int(settings.get("log_retention_seconds", DEFAULT_APP_SETTINGS["log_retention_seconds"])),
         tab=tab,
         user=user,
         show_sidebar=False,

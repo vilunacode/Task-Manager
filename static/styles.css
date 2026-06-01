@@ -401,11 +401,21 @@ button.secondary:hover {
 }
 
 button.danger {
-  background: var(--danger);
+  background: #fef2f2;
+  color: var(--danger);
 }
 
 button.danger:hover {
-  background: var(--danger-dark);
+  background: #fee2e2;
+}
+
+body[data-theme="dark"] button.danger {
+  background: rgba(209, 77, 65, 0.12);
+  color: var(--danger);
+}
+
+body[data-theme="dark"] button.danger:hover {
+  background: rgba(209, 77, 65, 0.22);
 }
 
 .link-btn {
@@ -1158,6 +1168,11 @@ body[data-theme="dark"] .comment-card {
 
 .initial-badge.badge-inactive {
   filter: grayscale(0.75) brightness(1.08);
+}
+
+.initial-badge.badge-anon {
+  background: #94a3b8;
+  color: #fff;
 }
 
 .sidebar-inactive-separator {

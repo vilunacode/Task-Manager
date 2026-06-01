@@ -89,7 +89,7 @@
               <input type="hidden" name="return_tab" value="closed">
               <button type="submit" class="small-btn">Archivieren</button>
             </form>
-            <button type="button" class="danger small-btn" onclick="openDeleteConfirm('{{ task.id }}', 'closed')">Löschen</button>
+            <button type="button" class="danger small-btn" title="Löschen" onclick="openDeleteConfirm('{{ task.id }}', 'closed')"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
           </div>
         </div>
       </article>
@@ -101,6 +101,7 @@
   {% endif %}
 
   {% if tab == 'archived' %}
+  <p class="muted" style="margin-bottom:14px; font-size:0.87rem;">Persönliche Daten werden nach <strong>{{ log_retention_seconds }}</strong> Sek. unwiderruflich entfernt. Danach ist keine Wiederherstellung möglich.</p>
   <div class="task-list closed-task-grid">
     {% if archived_tasks %}
       {% for task in archived_tasks %}
@@ -108,13 +109,13 @@
         data-title="{{ task['title'] | e }}"
         data-description="{{ task['description'] | e }}"
         data-priority="{{ task['priority'] or 3 }}"
-        data-due="{{ format_datetime(task['due_date']) }}"
+        data-due="{% if not task['is_anonymized'] %}{{ format_datetime(task['due_date']) }}{% endif %}"
         data-category="{{ ticket_category_label(task['ticket_category']) | e }}"
         data-room="{{ task['room'] or '' }}"
-        data-creator="{{ task['creator_name'] | e }}"
+        data-creator="{% if not task['is_anonymized'] %}{{ task['creator_name'] | e }}{% endif %}"
         data-created="{{ format_system_datetime(task['created_at']) }}"
         data-close-reason="{{ task['close_reason'] or '' }}"
-        data-assignees="{{ task['assignees'] | map(attribute='initials') | join(', ') | e }}"
+        data-assignees="{% if not task['is_anonymized'] %}{{ task['assignees'] | map(attribute='initials') | join(', ') | e }}{% endif %}"
       >
         <div class="task-priority-corner priority-{{ task['priority'] or 3 }}">{{ task['priority'] or 3 }}</div>
         <strong>{{ task['title'] }}</strong>
@@ -137,6 +138,7 @@
           {% endif %}
         </div>
         <div class="task-footer">
+          {% if not task['is_anonymized'] %}
           <small>Bearbeiter:</small>
           <div class="assignee-badges">
             {% if task['assignees'] %}
@@ -147,14 +149,17 @@
               <span class="muted">Nicht zugewiesen</span>
             {% endif %}
           </div>
+          {% endif %}
           <div class="archive-card-actions">
+            {% if not task['is_anonymized'] %}
             <form method="post" class="inline-form">
               <input type="hidden" name="action" value="unarchive_task">
               <input type="hidden" name="task_id" value="{{ task['id'] }}">
               <input type="hidden" name="return_tab" value="archived">
               <button type="submit" class="secondary small-btn">Aus Archiv zurücksetzen</button>
             </form>
-            <button type="button" class="danger small-btn" onclick="openDeleteConfirm('{{ task.id }}', 'archived')">Endgültig löschen</button>
+            {% endif %}
+            <button type="button" class="danger small-btn" title="Endgültig löschen" onclick="openDeleteConfirm('{{ task.id }}', 'archived')"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
           </div>
         </div>
       </article>
@@ -166,6 +171,10 @@
   {% endif %}
 
   {% if tab == 'log' %}
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap;">
+    <p class="muted" style="margin:0; font-size:0.87rem;">Einträge werden nach <strong>{{ log_retention_seconds }}</strong> Sek. automatisch entfernt.</p>
+    <button type="button" class="danger small-btn" title="Protokoll leeren" onclick="document.getElementById('clear-logs-dialog').showModal()"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
+  </div>
   {% if log_entries %}
   <div class="table-wrap">
     <table class="log-table">
@@ -201,11 +210,28 @@
     </table>
   </div>
   {% else %}
-  <p class="empty">Noch keine Einträge vorhanden. Einträge werden nach {{ log_retention_days }} Tagen automatisch entfernt.</p>
+  <p class="empty">Noch keine Einträge vorhanden. Einträge werden nach {{ log_retention_seconds }} Sekunden automatisch entfernt.</p>
   {% endif %}
   {% endif %}
 
 </section>
+
+<dialog id="clear-logs-dialog" class="task-dialog confirm-dialog-small">
+  <form method="post">
+    <div class="dialog-head">
+      <strong>Protokoll leeren?</strong>
+      <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
+    </div>
+    <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">
+      Alle Protokolleinträge werden dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.
+    </p>
+    <input type="hidden" name="action" value="clear_logs">
+    <div class="compact-actions">
+      <button type="submit" class="danger" title="Protokoll leeren"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="delete-confirm-dialog" class="task-dialog confirm-dialog-small">
   <form method="post">
@@ -221,7 +247,7 @@
     <input type="hidden" name="task_id" id="delete-confirm-task-id" value="">
     <input type="hidden" name="return_tab" id="delete-confirm-return-tab" value="">
     <div class="compact-actions">
-      <button type="submit" class="danger">Endgültig löschen</button>
+      <button type="submit" class="danger" title="Endgültig löschen"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
       <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
     </div>
   </form>

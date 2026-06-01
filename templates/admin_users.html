@@ -146,7 +146,7 @@
           </td>
           <td>
             {% if account['id'] != user['id'] %}
-            <button type="button" class="danger" onclick="openDeleteUserConfirm('{{ account.id }}')">Entfernen</button>
+            <button type="button" class="danger" title="Entfernen" onclick="openDeleteUserConfirm('{{ account.id }}')"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
             {% else %}
             <span class="muted">Aktueller Account</span>
             {% endif %}
@@ -275,7 +275,7 @@
             </dialog>
           </td>
           <td>
-            <button type="button" class="danger" onclick="document.getElementById('delete-role-dialog-{{ role_entry.role_key }}').showModal()">Entfernen</button>
+            <button type="button" class="danger" title="Entfernen" onclick="document.getElementById('delete-role-dialog-{{ role_entry.role_key }}').showModal()"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
             <dialog id="delete-role-dialog-{{ role_entry.role_key }}" class="task-dialog confirm-dialog-small">
               <form method="post">
                 <div class="dialog-head">
@@ -286,7 +286,7 @@
                 <input type="hidden" name="action" value="delete-role">
                 <input type="hidden" name="role_key" value="{{ role_entry['role_key'] }}">
                 <div class="compact-actions">
-                  <button type="submit" class="danger">Ja, entfernen</button>
+                  <button type="submit" class="danger" title="Ja, entfernen"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
                   <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
                 </div>
               </form>
@@ -311,7 +311,7 @@
     <input type="hidden" name="action" value="delete">
     <input type="hidden" name="user_id" id="delete-user-id" value="">
     <div class="compact-actions">
-      <button type="submit" class="danger">Ja, entfernen</button>
+      <button type="submit" class="danger" title="Ja, entfernen"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
       <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
     </div>
   </form>

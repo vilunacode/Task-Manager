@@ -7,6 +7,13 @@
     <h2>{{ task['title'] }}</h2>
     <span class="badge">{{ status_label(task['status']) }}</span>
   </div>
+
+  {% if task['is_anonymized'] %}
+  <div style="background:var(--line); border-radius:8px; padding:10px 14px; margin:10px 0 16px; font-size:0.88rem; color:var(--muted,#64748b);">
+    Persönliche Daten wurden aus diesem Task entfernt und können nicht wiederhergestellt werden.
+  </div>
+  {% endif %}
+
   <div class="task-view-block">
     <small class="task-view-label">Beschreibung</small>
     <p class="task-view-description">{{ task['description'] }}</p>
@@ -21,6 +28,7 @@
       <small class="task-view-label">Raum</small>
       <strong>{{ task['room'] or '-' }}</strong>
     </div>
+    {% if not task['is_anonymized'] %}
     <div class="task-view-meta-item">
       <small class="task-view-label">Ansprechpartner</small>
       {% if task['contact_persons'] or task.get('contact_person_custom') %}
@@ -36,18 +44,23 @@
       <strong>-</strong>
       {% endif %}
     </div>
+    {% if task['due_date'] %}
     <div class="task-view-meta-item">
       <small class="task-view-label">Fällig bis</small>
       <strong>{{ format_datetime(task['due_date']) }}</strong>
     </div>
+    {% endif %}
+    {% endif %}
     <div class="task-view-meta-item">
       <small class="task-view-label">Erstellt am</small>
       <strong>{{ format_system_datetime(task['created_at']) }}</strong>
     </div>
+    {% if not task['is_anonymized'] %}
     <div class="task-view-meta-item">
       <small class="task-view-label">Erstellt von</small>
       <strong>{{ task['creator_name'] }}</strong>
     </div>
+    {% endif %}
     {% if task['status'] == 'closed' %}
     <div class="task-view-meta-item task-view-meta-full">
       <small class="task-view-label">Schließungsgrund</small>
@@ -56,6 +69,7 @@
     {% endif %}
   </div>
 
+  {% if not task['is_anonymized'] %}
   <div class="task-view-assignees">
     <small class="task-view-label">Bearbeiter</small>
     <div class="assignee-badges">
@@ -68,6 +82,7 @@
       {% endif %}
     </div>
   </div>
+  {% endif %}
 </section>
 {% endif %}
 
@@ -204,7 +219,7 @@
         <div class="comment-head">
           <span class="initial-badge {{ comment['color_class'] }}">{{ comment['initials'] }}</span>
           <div>
-            <strong>{{ comment['username'] }}</strong><br>
+            <strong{% if comment['username'] == 'Anonymisiert' %} style="font-style:italic; color:var(--muted, #64748b);"{% endif %}>{{ comment['username'] }}</strong><br>
             <small class="muted">{{ comment['created_at'] }}</small>
             {% if comment['is_edited'] %}
             <br><small class="muted">Geändert am: {{ comment['updated_at'] }}</small>
@@ -229,7 +244,7 @@
             class="secondary small-btn"
             onclick="document.getElementById('edit-comment-dialog-{{ comment.id }}').showModal()"
           >Kommentar bearbeiten</button>
-          <button type="button" class="danger small-btn" onclick="openDeleteCommentConfirm('{{ url_for('delete_task_comment', task_id=task.id, comment_id=comment.id) }}')">Kommentar löschen</button>
+          <button type="button" class="danger small-btn" title="Kommentar löschen" onclick="openDeleteCommentConfirm('{{ url_for('delete_task_comment', task_id=task.id, comment_id=comment.id) }}')"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
         </div>
 
         <dialog id="edit-comment-dialog-{{ comment.id }}" class="task-dialog">
@@ -373,7 +388,7 @@
     </div>
     <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">Der Kommentar wird dauerhaft entfernt. Diese Aktion kann nicht rückgängig gemacht werden.</p>
     <div class="compact-actions">
-      <button type="submit" class="danger">Ja, löschen</button>
+      <button type="submit" class="danger" title="Ja, löschen"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
       <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
     </div>
   </form>
