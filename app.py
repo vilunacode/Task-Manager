@@ -4228,6 +4228,8 @@ if __name__ == "__main__":
         import pystray  # type: ignore[import-untyped]
         from PIL import Image  # type: ignore[import-untyped]
 
+        _app_name = os.path.splitext(os.path.basename(sys.executable))[0]
+
         _display_host = "127.0.0.1" if _host == "0.0.0.0" else _host
         _url = f"http://{_display_host}:{_port}"
 
@@ -4257,9 +4259,9 @@ if __name__ == "__main__":
             os._exit(0)
 
         _tray_icon = pystray.Icon(
-            "Ticket-System",
+            _app_name,
             _tray_image,
-            "Ticket-System läuft",
+            f"{_app_name} läuft",
             menu=pystray.Menu(
                 pystray.MenuItem("Im Browser öffnen", _on_open),
                 pystray.Menu.SEPARATOR,
@@ -4282,7 +4284,7 @@ if __name__ == "__main__":
             root.withdraw()
             if ready:
                 messagebox.showinfo(
-                    "Ticket-System gestartet",
+                    f"{_app_name} gestartet",
                     f"Der Dienst wurde erfolgreich gestartet.\n\nWebseite erreichbar unter:\n{_url}",
                 )
             else:
