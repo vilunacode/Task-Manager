@@ -258,7 +258,7 @@ DEFAULT_APP_SETTINGS = {
     "role_color_user": "#64748b",
     "role_label_user": "Benutzer",
     "new_task_tone": "classic",
-    "calendar_disabled": "0",
+    "calendar_disabled": "1",
     "favicon_filename": "",
     "site_name": "Task Manager",
     "log_retention_seconds": str(7 * 24 * 3600),
