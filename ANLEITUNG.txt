@@ -1,0 +1,118 @@
+============================================================
+  ANLEITUNG: Code holen, anpassen und EXE erstellen
+============================================================
+
+VORAUSSETZUNGEN
+---------------
+  - Git         : https://git-scm.com/downloads
+  - Python 3.11 : https://www.python.org/downloads/
+                  (Haken setzen bei "Add Python to PATH")
+  - Texteditor  : z.B. VS Code (https://code.visualstudio.com)
+
+
+------------------------------------------------------------
+SCHRITT 1: Code von GitHub holen
+------------------------------------------------------------
+
+1. Einen Ordner anlegen, in dem der Code gespeichert werden soll.
+   Beispiel: C:\Projekte
+
+2. In den Ordner wechseln und ein Terminal (PowerShell / CMD) öffnen.
+   Tipp: Im Windows-Explorer in den Ordner navigieren, dann in der
+   Adressleiste "powershell" eingeben und Enter drücken.
+
+3. Folgenden Befehl eingeben:
+
+     git clone https://github.com/vilunacode/Task-Manager
+
+   Danach liegt der Code im Unterordner "Task-Manager".
+
+4. In den Ordner wechseln:
+
+     cd Task-Manager
+
+
+------------------------------------------------------------
+SCHRITT 2: Code anpassen (optional)
+------------------------------------------------------------
+
+1. Den Ordner "Task-Manager" in VS Code öffnen:
+   Entweder per Datei > Ordner öffnen, oder im Terminal:
+
+     code .
+
+2. Dateien bearbeiten. Die wichtigsten Dateien:
+
+     app.py                  - Hauptlogik / Backend
+     templates\*.html        - Seiten / Oberfläche
+     static\styles.css       - Design / Farben
+     scripts\build.ps1       - Build-Einstellungen
+
+3. Änderungen speichern (Strg+S).
+
+HINWEIS: Nach jeder Änderung am Code muss die EXE neu erstellt
+werden, damit die Änderung in der fertigen Anwendung sichtbar ist.
+
+
+------------------------------------------------------------
+SCHRITT 3: EXE erstellen
+------------------------------------------------------------
+
+1. Sicherstellen, dass man sich im Ordner "Task-Manager" befindet.
+
+2. Die Datei "build.bat" im Projektordner per Doppelklick starten.
+   ODER im Terminal ausführen:
+
+     powershell -ExecutionPolicy Bypass -File scripts\build.ps1
+
+3. Das Skript fragt zwei Dinge:
+
+     >> App-Name (Enter für 'Ticket-System')
+        Gewünschten Namen eingeben, z.B. "Helpdesk" oder Enter
+        für den Standardnamen drücken.
+
+     >> Icon-Datei (Enter für 'ts.ico')
+        Namen einer .ico-Datei eingeben oder Enter drücken.
+        Eigene Icon-Datei einfach vorher in den Projektordner legen.
+
+4. Das Skript installiert alle Abhängigkeiten automatisch und
+   erstellt die EXE. Das dauert 2-5 Minuten.
+
+5. Die fertige EXE liegt danach hier:
+
+     Task-Manager\dist\<App-Name>.exe
+
+6. Die EXE in einen beliebigen Ordner kopieren und starten.
+   Beim ersten Start wird automatisch eine neue Datenbank angelegt.
+
+
+------------------------------------------------------------
+NACH EINEM UPDATE (neuen Code von GitHub holen)
+------------------------------------------------------------
+
+Wenn der Code auf GitHub aktualisiert wurde, kann man den eigenen
+lokalen Code mit diesem Befehl auf den neuesten Stand bringen:
+
+     git pull
+
+Danach die EXE neu erstellen (Schritt 3 wiederholen).
+
+
+------------------------------------------------------------
+HÄUFIGE FRAGEN
+------------------------------------------------------------
+
+F: Wo wird die Datenbank gespeichert?
+A: Im selben Ordner wie die EXE (Datei: task-manager.db).
+   Diese Datei enthält alle Daten. Regelmäßig sichern!
+
+F: Kann ich die EXE auf einem anderen PC nutzen?
+A: Ja. Die EXE einfach kopieren und starten. Keine Installation
+   nötig. Die Datenbank (task_manager.db) liegt neben der EXE.
+
+F: Auf welchem Port läuft die App?
+A: Standardmäßig Port 5000. Erreichbar unter:
+   http://127.0.0.1:5000
+   Der Port kann in der config.ini angepasst werden.
+
+============================================================
