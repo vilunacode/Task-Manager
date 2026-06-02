@@ -417,16 +417,21 @@
     const clockEl = document.getElementById("overview-clock");
     if (clockEl) {
       clockEl.innerHTML =
-        '<span class="clock-hh"></span>' +
-        '<span class="clock-sep">:</span>' +
-        '<span class="clock-mm"></span>' +
-        '<span class="clock-sep">:</span>' +
-        '<span class="clock-ss"></span>';
+        '<span class="clock-weekday"></span>' +
+        '<span class="clock-time">' +
+          '<span class="clock-hh"></span>' +
+          '<span class="clock-sep">:</span>' +
+          '<span class="clock-mm"></span>' +
+          '<span class="clock-sep">:</span>' +
+          '<span class="clock-ss"></span>' +
+        '</span>';
 
       const hhEl = clockEl.querySelector(".clock-hh");
       const mmEl = clockEl.querySelector(".clock-mm");
       const ssEl = clockEl.querySelector(".clock-ss");
+      const weekdayEl = clockEl.querySelector(".clock-weekday");
       const seps = clockEl.querySelectorAll(".clock-sep");
+      const WEEKDAYS = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 
       let sepVisible = true;
       const tickClock = () => {
@@ -434,6 +439,7 @@
         hhEl.textContent = String(t.getHours()).padStart(2, "0");
         mmEl.textContent = String(t.getMinutes()).padStart(2, "0");
         ssEl.textContent = String(t.getSeconds()).padStart(2, "0");
+        weekdayEl.textContent = WEEKDAYS[t.getDay()];
         sepVisible = !sepVisible;
         seps.forEach(s => s.classList.toggle("dim", !sepVisible));
       };
