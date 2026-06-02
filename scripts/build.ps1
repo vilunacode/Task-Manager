@@ -75,6 +75,34 @@ Write-Host "   Fertig." -ForegroundColor Green
 $TrayIcon = "_tray.ico"
 Copy-Item $IconFile $TrayIcon
 
+# ── version.txt mit App-Name generieren ──────────────────
+$VersionFile = "version.txt"
+$VersionContent = @"
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 0, 0, 0),
+    prodvers=(1, 0, 0, 0),
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        u'040904B0',
+        [
+          StringStruct(u'CompanyName', u'vilunacode'),
+          StringStruct(u'FileDescription', u'$AppName'),
+          StringStruct(u'FileVersion', u'1.0.0'),
+          StringStruct(u'ProductName', u'$AppName'),
+          StringStruct(u'ProductVersion', u'1.0.0'),
+          StringStruct(u'LegalCopyright', u'Made by vilunacode'),
+        ]
+      )
+    ]),
+    VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
+  ]
+)
+"@
+Set-Content -Path $VersionFile -Value $VersionContent -Encoding UTF8
+
 # ── EXE erstellen ─────────────────────────────────────────
 Write-Host ""
 Write-Host ">> EXE wird erstellt (kann einige Minuten dauern)..." -ForegroundColor Yellow
