@@ -101,7 +101,7 @@
   {% endif %}
 
   {% if tab == 'archived' %}
-  <p class="muted" style="margin-bottom:14px; font-size:0.87rem;">Persönliche Daten werden nach <strong>{{ log_retention_seconds }}</strong> Sek. unwiderruflich entfernt. Danach ist keine Wiederherstellung möglich.</p>
+  <p class="muted" style="margin-bottom:14px; font-size:0.87rem;">Persönliche Daten werden nach <strong>{{ log_retention_display }}</strong> unwiderruflich entfernt. Danach ist keine Wiederherstellung möglich.</p>
   <div class="task-list closed-task-grid">
     {% if archived_tasks %}
       {% for task in archived_tasks %}
@@ -172,7 +172,7 @@
 
   {% if tab == 'log' %}
   <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap;">
-    <p class="muted" style="margin:0; font-size:0.87rem;">Einträge werden nach <strong>{{ log_retention_seconds }}</strong> Sek. automatisch entfernt.</p>
+    <p class="muted" style="margin:0; font-size:0.87rem;">Einträge werden nach <strong>{{ log_retention_display }}</strong> automatisch entfernt.</p>
     <button type="button" class="danger small-btn" title="Protokoll leeren" onclick="document.getElementById('clear-logs-dialog').showModal()"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
   </div>
   {% if log_entries %}
@@ -210,7 +210,7 @@
     </table>
   </div>
   {% else %}
-  <p class="empty">Noch keine Einträge vorhanden. Einträge werden nach {{ log_retention_seconds }} Sekunden automatisch entfernt.</p>
+  <p class="empty">Noch keine Einträge vorhanden. Einträge werden nach {{ log_retention_display }} automatisch entfernt.</p>
   {% endif %}
   {% endif %}
 

@@ -262,6 +262,15 @@ DEFAULT_APP_SETTINGS = {
     "favicon_filename": "",
     "site_name": "Task Manager",
     "log_retention_seconds": str(7 * 24 * 3600),
+    "log_retention_value": "7",
+    "log_retention_unit": "days",
+}
+
+LOG_RETENTION_UNITS = {
+    "seconds": (1, "Sekunde", "Sekunden"),
+    "minutes": (60, "Minute", "Minuten"),
+    "hours": (3600, "Stunde", "Stunden"),
+    "days": (86400, "Tag", "Tage"),
 }
 
 FAVICON_ALLOWED_EXTENSIONS = {"ico", "png", "jpg", "jpeg", "svg"}
@@ -2586,20 +2595,25 @@ def settings_page():
             if not site_name:
                 site_name = DEFAULT_APP_SETTINGS["site_name"]
 
-            log_retention_seconds = parse_int_setting(
-                request.form.get("log_retention_seconds", ""),
+            log_retention_value = parse_int_setting(
+                request.form.get("log_retention_value", ""),
                 min_value=1,
-                max_value=365 * 24 * 3600,
+                max_value=365 * 24 * 24,
             )
-            if log_retention_seconds is None:
+            log_retention_unit = request.form.get("log_retention_unit", "days")
+            if log_retention_value is None or log_retention_unit not in LOG_RETENTION_UNITS:
                 flash("Mindestens ein Zahlenwert ist ungültig oder außerhalb des erlaubten Bereichs.", "error")
                 return redirect(url_for("settings_page"))
+            multiplier = LOG_RETENTION_UNITS[log_retention_unit][0]
+            log_retention_seconds = log_retention_value * multiplier
 
             set_app_setting("new_task_highlight_seconds", str(highlight_seconds))
             set_app_setting("overview_refresh_interval_seconds", str(refresh_seconds))
             set_app_setting("new_task_tone", new_task_tone)
             set_app_setting("calendar_disabled", calendar_disabled)
             set_app_setting("site_name", site_name)
+            set_app_setting("log_retention_value", str(log_retention_value))
+            set_app_setting("log_retention_unit", log_retention_unit)
             set_app_setting("log_retention_seconds", str(log_retention_seconds))
 
             flash("Einstellungen wurden gespeichert.", "success")
@@ -2819,6 +2833,7 @@ def settings_page():
         custom_roles=active_custom_roles(),
         ticket_categories=get_ticket_categories(),
         tone_options=sorted(TONE_OPTIONS.keys()),
+        log_retention_units=LOG_RETENTION_UNITS,
         show_sidebar=False,
     )
 
@@ -4196,12 +4211,17 @@ def archive():
     )
 
     settings = app_settings()
+    _ret_value = int(settings.get("log_retention_value", DEFAULT_APP_SETTINGS["log_retention_value"]))
+    _ret_unit = settings.get("log_retention_unit", DEFAULT_APP_SETTINGS["log_retention_unit"])
+    _unit_info = LOG_RETENTION_UNITS.get(_ret_unit, LOG_RETENTION_UNITS["days"])
+    _ret_label = _unit_info[1] if _ret_value == 1 else _unit_info[2]
     return render_template(
         "archive.html",
         tasks=closed_tasks,
         archived_tasks=archived_tasks,
         log_entries=log_entries,
         log_retention_seconds=int(settings.get("log_retention_seconds", DEFAULT_APP_SETTINGS["log_retention_seconds"])),
+        log_retention_display=f"{_ret_value} {_ret_label}",
         tab=tab,
         user=user,
         show_sidebar=False,

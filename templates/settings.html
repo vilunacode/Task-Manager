@@ -41,8 +41,15 @@
     <label>Live-Refresh Intervall (Sek.)
       <input type="number" min="1" max="60" name="overview_refresh_interval_seconds" value="{{ settings['overview_refresh_interval_seconds'] }}" required>
     </label>
-    <label>Fristlöschungsintervall (Sek.)
-      <input type="number" min="1" max="{{ 365 * 24 * 3600 }}" name="log_retention_seconds" value="{{ settings['log_retention_seconds'] }}" required>
+    <label style="grid-column: 1 / -1;">Löschfrist Archiv &amp; Protokoll
+      <div style="display:flex; gap:8px; margin-top:4px;">
+        <input type="number" min="1" max="36500" name="log_retention_value" value="{{ settings['log_retention_value'] }}" required style="flex:1;">
+        <select name="log_retention_unit" style="flex:1;">
+          {% for unit_key, unit_info in log_retention_units.items() %}
+          <option value="{{ unit_key }}" {{ 'selected' if settings['log_retention_unit'] == unit_key else '' }}>{{ unit_info[2] }}</option>
+          {% endfor %}
+        </select>
+      </div>
     </label>
 
     <label>Ton bei neuer Task
