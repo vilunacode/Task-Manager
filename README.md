@@ -1,182 +1,81 @@
 # Task Manager
 
-Browserbasierter Task-Manager auf Flask-Basis mit Rollen, Dashboard-Board, Live-Übersicht, Ping-Benachrichtigungen, Kalender und Admin-Verwaltung.
+Browserbasierter Task-Manager für Teams. Läuft lokal als Python-App oder als eigenständige Windows-EXE — kein Server, keine Cloud, keine externe Abhängigkeit.
 
-## Überblick
+---
 
-Die Anwendung richtet sich an Teams, die Aufgaben in einem visuellen Board verwalten möchten.
-Neben klassischem Task-Tracking gibt es Nutzer- und Rollenverwaltung, Ping-Workflow über Erwähnungen, Kalenderfunktionen sowie umfangreiche Einstellungen für Admins.
+## Was dich erwartet
 
-## Funktionsumfang
+Nach dem ersten Start landest du auf einer Einrichtungsseite, auf der du den Admin-Account anlegst. Danach führt ein Onboarding durch die Grundkonfiguration: Rollen definieren, Team-Accounts anlegen, Kategorien erstellen. Anschließend ist die App sofort einsatzbereit.
 
-### Ersteinrichtung & Onboarding
+---
 
-- Beim ersten Start Weiterleitung auf `/setup` zur Anlage des Admin-Accounts
-- Geführtes Onboarding (`/onboarding`) nach dem Setup:
-  - **Rollen**: Systemrollen (Admin, Benutzer) sowie eigene Rollen erstellen, bearbeiten, löschen — jede benutzerdefinierte Rolle kann optional mit Adminrechten versehen werden
-  - **Benutzer**: Team-Accounts anlegen (mit Rolle, Typ und Kürzel), bearbeiten, löschen
-  - **Task-Kategorien**: Kategorien erstellen, bearbeiten, löschen
-- Während des Onboardings zeigt die Navigationsleiste nur Dark/Light-Mode-Schalter und Logout — keine Ablenkung durch weitere Links
-- Über „Überspringen" kann das Onboarding jederzeit zum Dashboard verlassen werden
-- Lösch-Aktionen im Onboarding öffnen einen Bestätigungs-Dialog im einheitlichen Seiten-Design
-
-### Auth & Grundfunktionen
-
-- Login/Logout mit Session-Auth
-- Passwort-Hashing mit `werkzeug.security`
+## Funktionen
 
 ### Tasks & Dashboard
+- Tasks mit Titel, Beschreibung, Priorität (1–5), Kategorie, Raum, Ansprechpartner und Fälligkeitsdatum
+- Status-Board: **Offen · In Bearbeitung · Geschlossen**
+- Drag & Drop für Statuswechsel und Zuweisung aus der Team-Sidebar
+- Kommentare mit Nutzer-Erwähnungen (Pings) und Ping-Postfach
 
-- Status-Board mit drei Spalten:
-  - `Offen`
-  - `In Bearbeitung`
-  - `Geschlossen`
-- Drag-and-Drop für Statuswechsel
-- Bearbeiter per Drag-and-Drop aus der Team-Sidebar auf Tasks zuweisen
-- Task-Erstellung mit:
-  - Titel, Beschreibung
-  - Kategorie (frei definierbar)
-  - Priorität `1–5` (farblich abgestufte Ecke auf der Karte)
-  - Raum
-  - Ansprechpartner (registrierter Nutzer oder freier Text über „Andere...")
-  - Fälligkeitsdatum/-zeit (optional)
-- Bestehende Tasks können in der Detailansicht inkl. aller Felder bearbeitet werden
-- Beim Erstellen ohne angelegte Kategorie erscheint ein Hinweis-Popup
+### Live-Übersicht
+- Automatisch aktualisierendes Board aller Tasks nach Status
+- Farblich markierte Spalten (gelb / blau / grün)
+- Neue Tasks werden kurz hervorgehoben, optional mit Ton
+- Uhr mit Wochentag im Kopfbereich
 
-### Live-Übersicht (`/overview`)
+### Archiv & Protokoll
+- Geschlossene Tasks archivieren, wiederherstellen oder endgültig löschen
+- Aktivitätsprotokoll mit konfigurierbarer Löschfrist (Einheit frei wählbar: Minuten / Stunden / Tage)
 
-- Kompaktes Übersichts-Board aller Tasks nach Status
-- Automatische Aktualisierung in einstellbarem Intervall (Standard: 1 Sekunde)
-- Neu eingegangene Tasks werden kurzzeitig farblich hervorgehoben (Dauer konfigurierbar)
-- Tooltip mit Aufgaben-Details beim Hovern über eine Karte
+### Benutzerverwaltung
+- Rollen mit eigener Farbe und optionalen Adminrechten
+- Benutzertypen: Mitarbeiter, Trainingsmitarbeiter, Inaktiv
+- Nutzer können aus Dashboard-Ansichten ausgeblendet werden
 
-### Pings & Kommentare
-
-- Kommentare pro Task
-- Nutzer-Markierungen (Mentions) in Kommentaren
-- Ping-Filter im Dashboard mit Tabs:
-  - `Ungelesene Pings`
-  - `Gelesene Pings`
-- Pro Task zwischen gelesen/ungelesen umschalten
-- Ungelesene Pings als Counter am Ping-Filter
-
-### Archiv & geschlossene Tasks
-
-- Geschlossene Tasks über `/admin/closed` einsehbar (Admin)
-- Archiv (`/archive`) für abgeschlossene und archivierte Aufgaben mit Filterung
-
-### Benutzer, Rollen & Teamdarstellung
-
-- Rollenmodell:
-  - **Admin** (Systemrolle): volle Adminrechte, Name und Farbe frei anpassbar (Standard: `#fc5f5f`)
-  - **Benutzer** (Systemrolle): keine Adminrechte, Name und Farbe frei anpassbar (Standard: `#64748b`)
-  - **Benutzerdefinierte Rollen**: vom Admin erstellt, mit eigener Farbe — optional mit Adminrechten ausgestattet
-- Rollenverwaltung: erstellen, umbenennen, Farbe ändern, Adminrechte vergeben/entziehen, löschen
-- Rollenauswahl im Dropdown zeigt `(Admin)` als Hinweis bei Rollen mit Adminrechten
-- Benutzerverwaltung (anlegen, bearbeiten, löschen) mit Schutzlogik (z. B. letzter Admin)
-- Zusätzliche Nutzerattribute:
-  - Aktiv / Inaktiv
-  - Mitarbeitertyp: `Mitarbeiter` oder `Trainingsmitarbeiter`
-  - `Im Dashboard ausblenden` (Invisible)
-- Teamliste im Dashboard gruppiert und visuell getrennt:
-  - Mitarbeiter
-  - Trainingsmitarbeiter
-  - Inaktive (gedimmt)
-- Dashboard-invisible Nutzer erscheinen nicht in Team-Sidebar, Bearbeiter- und Ansprechpartner-Auswahlen
-
-### Kalender
-
-- Monatskalender mit persönlichen Terminen und Task-Fälligkeitsdaten
-- Persönliche Ansicht und Team-Filter (Admin)
-- Navigation zwischen Monaten
+### Kalender *(optional)*
+- Persönliche Termine und Task-Fälligkeiten im Monatskalender
+- Standardmäßig deaktiviert — in den Admin-Einstellungen aktivierbar
 
 ### Einstellungen
+- Light / Dark Theme pro Nutzer
+- Webseitenname, Favicon, Refresh-Intervall, Highlight-Dauer, Benachrichtigungston
+- Löschfrist für Archiv & Protokoll mit wählbarer Einheit
 
-- **Nutzer-Einstellungen**: Light/Dark Theme, Kartenansicht (kompakt/erweitert), Passwort ändern
-- **Admin-Einstellungen**:
-  - Webseitenname (wird in Browser-Tab und Navigationsleiste angezeigt)
-  - Highlight-Dauer für neue Tasks in der Live-Übersicht
-  - Live-Refresh-Intervall
-  - Benachrichtigungston bei neuer Task
-  - Kalender deaktivieren (für alle Nutzer ausblenden)
-  - Favicon hochladen/entfernen (ICO, PNG, JPG, SVG — max. 2 MB)
-  - Task-Kategorien verwalten
+---
 
-## Technischer Stack
+## Starten
 
-- Backend: Python 3.12, Flask
-- Datenbank: SQLite (`task_manager.db`)
-- Frontend: Jinja2, HTML, CSS, JavaScript (kein externes Framework)
-
-## Projektstruktur
-
-```text
-Task-Manager/
-├── app.py
-├── requirements.txt
-├── config.ini
-├── publish.sh / publish.ps1 / publish.bat
-├── templates/
-│   ├── base.html
-│   ├── setup.html
-│   ├── onboarding.html
-│   ├── login.html
-│   ├── dashboard.html
-│   ├── overview.html
-│   ├── calendar.html
-│   ├── task_detail.html
-│   ├── settings.html
-│   ├── admin_users.html
-│   ├── admin_closed.html
-│   └── archive.html
-├── static/
-│   └── styles.css
-└── README.md
-```
-
-## Schnellstart
-
-1. Virtuelle Umgebung erstellen
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-2. Abhängigkeiten installieren
+### Als Python-App
 
 ```bash
 pip install -r requirements.txt
-```
-
-3. Anwendung starten
-
-```bash
 python app.py
 ```
 
-Optional: Vor dem Start `config.ini` anpassen (Host, Port, Debug, Zeitzone, DB-Pfad).
+Dann im Browser: `http://localhost:5000`
 
-4. Browser öffnen
+### Als Windows-EXE
 
-```text
-http://localhost:5000
+```powershell
+.\scripts\build.ps1
 ```
 
-Beim ersten Start erfolgt eine Weiterleitung auf `/setup` zur Anlage des Admin-Accounts, danach auf `/onboarding` zur Grundkonfiguration.
+Das Skript fragt nach App-Name und Icon, installiert alle Abhängigkeiten automatisch und erzeugt eine eigenständige EXE unter `dist\<App-Name>.exe`. Die EXE legt beim ersten Start automatisch eine Datenbank im selben Ordner an.
+
+---
 
 ## Konfiguration
 
-Die Anwendung liest beim Start automatisch `config.ini` im Projektordner ein.
+Anpassungen vor dem Start in `config.ini`:
 
 ```ini
 [server]
-host = 0.0.0.0
+host = 0.0.0.0   # 127.0.0.1 = nur lokal, 0.0.0.0 = im Netzwerk erreichbar
 port = 5000
-debug = true
 
 [app]
-secret_key = dev-secret-change-me
+secret_key = dein-sicherer-schluessel
 timezone = Europe/Berlin
 
 [database]
@@ -184,33 +83,8 @@ driver = sqlite
 path = task_manager.db
 ```
 
-Hinweise:
+---
 
-- `host`: `127.0.0.1` nur lokal, `0.0.0.0` im Netzwerk erreichbar
-- `database.driver`: `sqlite`, `postgres`, `postgresql`, `mysql`, `mariadb`
-- `database.path`: Pfad zur SQLite-Datei (relativ oder absolut, wenn `driver=sqlite`)
-- `database.url`: direkte Verbindungs-URL (hat Priorität über Einzelfelder)
-- Hinweis: Aktuell arbeitet die Anwendung intern mit SQLite. Externe Treiber sind vorbereitet, aber noch nicht aktiv nutzbar.
+## Technologie
 
-### Environment-Variablen (optional)
-
-Folgende Variablen können `config.ini` überschreiben:
-
-- `TASK_MANAGER_CONFIG` — Pfad zu alternativer ini-Datei
-- `TASK_MANAGER_HOST`, `TASK_MANAGER_PORT`, `TASK_MANAGER_DEBUG`
-- `SECRET_KEY`, `APP_TIMEZONE`
-- `DATABASE_PATH`, `DATABASE_URL`
-- `TASK_MANAGER_DB_DRIVER`, `TASK_MANAGER_DB_HOST`, `TASK_MANAGER_DB_PORT`
-- `TASK_MANAGER_DB_NAME`, `TASK_MANAGER_DB_USER`, `TASK_MANAGER_DB_PASSWORD`
-
-## Wichtige Hinweise
-
-- Das DB-Schema wird beim Start automatisch migriert/ergänzt — kein manuelles Setup nötig.
-- Für den Produktionseinsatz sollten mindestens gesetzt sein:
-  - `SECRET_KEY` (sicherer Zufallswert)
-  - HTTPS / Reverse Proxy (z. B. nginx)
-  - Produktionsfähiger WSGI-Server (z. B. gunicorn)
-
-## Lizenz
-
-Interne Nutzung / projektabhängig. Bei Bedarf konkrete Lizenz ergänzen (z. B. MIT).
+Python · Flask · SQLite · Jinja2 · Vanilla JS/CSS — kein externes Frontend-Framework.
