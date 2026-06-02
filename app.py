@@ -342,6 +342,8 @@ def init_db() -> None:
             is_admin INTEGER NOT NULL DEFAULT 0,
             initials TEXT,
             role TEXT,
+            first_name TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL
         );
 
@@ -492,6 +494,10 @@ def init_db() -> None:
         db.execute(f"ALTER TABLE users ADD COLUMN member_type TEXT NOT NULL DEFAULT '{MEMBER_TYPE_REGULAR}'")
     if "is_dashboard_invisible" not in columns:
         db.execute("ALTER TABLE users ADD COLUMN is_dashboard_invisible INTEGER NOT NULL DEFAULT 0")
+    if "first_name" not in columns:
+        db.execute("ALTER TABLE users ADD COLUMN first_name TEXT NOT NULL DEFAULT ''")
+    if "notes" not in columns:
+        db.execute("ALTER TABLE users ADD COLUMN notes TEXT NOT NULL DEFAULT ''")
 
     task_columns = {row["name"] for row in db.execute("PRAGMA table_info(tasks)").fetchall()}
     if "due_date" not in task_columns:
@@ -1062,7 +1068,7 @@ def ticket_category_label(value: str | None) -> str:
     for cat in get_ticket_categories():
         if cat["category_key"] == normalized:
             return cat["label"]
-    return normalized or "-"
+    return (value or "").strip() or "-"
 
 
 def ticket_category_options() -> list[dict[str, str]]:
@@ -2112,10 +2118,17 @@ def onboarding():
             if existing is None:
                 flash("Kategorie nicht gefunden.", "error")
                 return redirect(url_for("onboarding", tab=active_tab))
-            usage = query_one("SELECT COUNT(*) AS cnt FROM tasks WHERE ticket_category = ?", (category_key,))
-            if usage and int(usage["cnt"]) > 0:
-                flash("Kategorie kann nicht gelöscht werden, solange Tasks dieser Kategorie zugewiesen sind.", "error")
+            active_usage = query_one(
+                "SELECT COUNT(*) AS cnt FROM tasks WHERE ticket_category = ? AND COALESCE(is_archived, 0) = 0",
+                (category_key,),
+            )
+            if active_usage and int(active_usage["cnt"]) > 0:
+                flash("Kategorie kann nicht gelöscht werden, solange aktive Tasks dieser Kategorie zugewiesen sind.", "error")
                 return redirect(url_for("onboarding", tab=active_tab))
+            execute(
+                "UPDATE tasks SET ticket_category = ? WHERE ticket_category = ? AND COALESCE(is_archived, 0) = 1",
+                (existing["label"], category_key),
+            )
             execute("DELETE FROM ticket_categories WHERE category_key = ?", (category_key,))
             g.pop("ticket_categories", None)
             flash(f"Kategorie \"{existing['label']}\" wurde entfernt.", "success")
@@ -2637,22 +2650,27 @@ def settings_page():
                 return redirect(url_for("settings_page"))
 
             existing = query_one(
-                "SELECT category_key FROM ticket_categories WHERE category_key = ?", (category_key,)
+                "SELECT category_key, label FROM ticket_categories WHERE category_key = ?", (category_key,)
             )
             if existing is None:
                 flash("Kategorie nicht gefunden.", "error")
                 return redirect(url_for("settings_page"))
 
-            usage = query_one(
-                "SELECT COUNT(*) AS cnt FROM tasks WHERE ticket_category = ?", (category_key,)
+            active_usage = query_one(
+                "SELECT COUNT(*) AS cnt FROM tasks WHERE ticket_category = ? AND COALESCE(is_archived, 0) = 0",
+                (category_key,),
             )
-            if usage is not None and int(usage["cnt"]) > 0:
+            if active_usage is not None and int(active_usage["cnt"]) > 0:
                 flash(
-                    "Kategorie kann nicht gelöscht werden, solange Tasks dieser Kategorie zugewiesen sind.",
+                    "Kategorie kann nicht gelöscht werden, solange aktive Tasks dieser Kategorie zugewiesen sind.",
                     "error",
                 )
                 return redirect(url_for("settings_page"))
 
+            execute(
+                "UPDATE tasks SET ticket_category = ? WHERE ticket_category = ? AND COALESCE(is_archived, 0) = 1",
+                (existing["label"], category_key),
+            )
             execute("DELETE FROM ticket_categories WHERE category_key = ?", (category_key,))
             g.pop("ticket_categories", None)
             flash("Kategorie wurde entfernt.", "success")
@@ -3687,6 +3705,8 @@ def manage_users():
             if member_type not in VALID_MEMBER_TYPES:
                 member_type = MEMBER_TYPE_REGULAR
             is_dashboard_invisible = 1 if request.form.get("is_dashboard_invisible") == "1" else 0
+            first_name = request.form.get("first_name", "").strip()
+            notes = request.form.get("notes", "").strip()
 
             if not username or not password:
                 flash("Benutzername und Passwort sind erforderlich.", "error")
@@ -3701,8 +3721,7 @@ def manage_users():
                 return redirect(url_for("manage_users"))
 
             if not initials:
-                flash("Kürzel muss genau 3 Zeichen (A-Z/0-9) lang sein.", "error")
-                return redirect(url_for("manage_users"))
+                initials = make_initials_from_username(username)
 
             if not role_value_create or (not is_admin and not role):
                 flash("Bitte eine gültige Rolle auswählen.", "error")
@@ -3720,8 +3739,8 @@ def manage_users():
 
             execute(
                 """
-                INSERT INTO users (username, password_hash, is_admin, initials, role, member_type, is_dashboard_invisible, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users (username, password_hash, is_admin, initials, role, member_type, is_dashboard_invisible, first_name, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     username,
@@ -3731,6 +3750,8 @@ def manage_users():
                     role,
                     member_type,
                     is_dashboard_invisible,
+                    first_name,
+                    notes,
                     now_iso(),
                 ),
             )
@@ -3883,8 +3904,7 @@ def manage_users():
                 return redirect(url_for("manage_users"))
 
             if not initials:
-                flash("Kürzel muss genau 3 Zeichen (A-Z/0-9) lang sein.", "error")
-                return redirect(url_for("manage_users"))
+                initials = make_initials_from_username(username)
 
             if not role_value_upd or (not is_admin and not role):
                 flash("Bitte eine gültige Rolle auswählen.", "error")
@@ -3919,6 +3939,8 @@ def manage_users():
             if member_type not in VALID_MEMBER_TYPES:
                 member_type = MEMBER_TYPE_REGULAR
             is_dashboard_invisible = 1 if request.form.get("is_dashboard_invisible") == "1" else 0
+            first_name = request.form.get("first_name", "").strip()
+            notes = request.form.get("notes", "").strip()
             if target["is_admin"] and not is_admin:
                 row = query_one("SELECT COUNT(*) AS cnt FROM users WHERE is_admin = 1")
                 if int(row["cnt"]) <= 1:
@@ -3929,7 +3951,7 @@ def manage_users():
                 execute(
                     """
                     UPDATE users
-                    SET username = ?, initials = ?, role = ?, is_admin = ?, is_inactive = ?, member_type = ?, is_dashboard_invisible = ?, password_hash = ?
+                    SET username = ?, initials = ?, role = ?, is_admin = ?, is_inactive = ?, member_type = ?, is_dashboard_invisible = ?, first_name = ?, notes = ?, password_hash = ?
                     WHERE id = ?
                     """,
                     (
@@ -3940,6 +3962,8 @@ def manage_users():
                         is_inactive,
                         member_type,
                         is_dashboard_invisible,
+                        first_name,
+                        notes,
                         generate_password_hash(new_password),
                         target_id,
                     ),
@@ -3952,10 +3976,10 @@ def manage_users():
                 execute(
                     """
                     UPDATE users
-                    SET username = ?, initials = ?, role = ?, is_admin = ?, is_inactive = ?, member_type = ?, is_dashboard_invisible = ?
+                    SET username = ?, initials = ?, role = ?, is_admin = ?, is_inactive = ?, member_type = ?, is_dashboard_invisible = ?, first_name = ?, notes = ?
                     WHERE id = ?
                     """,
-                    (username, initials, role, is_admin, is_inactive, member_type, is_dashboard_invisible, target_id),
+                    (username, initials, role, is_admin, is_inactive, member_type, is_dashboard_invisible, first_name, notes, target_id),
                 )
                 if target["id"] == current["id"]:
                     flash("Eigener Account wurde aktualisiert.", "success")
@@ -4036,6 +4060,8 @@ def manage_users():
             is_inactive,
             is_dashboard_invisible,
             member_type,
+            first_name,
+            notes,
             created_at
         FROM users
         ORDER BY
@@ -4199,8 +4225,8 @@ if __name__ == "__main__":
         import webbrowser
         from tkinter import messagebox
 
-        import pystray
-        from PIL import Image
+        import pystray  # type: ignore[import-untyped]
+        from PIL import Image  # type: ignore[import-untyped]
 
         _display_host = "127.0.0.1" if _host == "0.0.0.0" else _host
         _url = f"http://{_display_host}:{_port}"

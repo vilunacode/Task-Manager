@@ -5,24 +5,27 @@
   <h1>Benutzerverwaltung</h1>
   <form method="post" class="form-grid two-columns">
     <input type="hidden" name="action" value="create">
-    <label>Benutzername
+    <label>Vorname
+      <input type="text" name="first_name" maxlength="50">
+    </label>
+    <label><span>Nachname <span class="req-mark">*</span> <small class="muted">(= Benutzername zum Anmelden)</small></span>
       <input type="text" name="username" maxlength="25" required>
     </label>
-    <label>Kürzel (3 Zeichen)
-      <input type="text" name="initials" minlength="3" maxlength="3" required>
+    <label><span>Kürzel <small class="muted">(3 Zeichen, optional)</small></span>
+      <input type="text" name="initials" minlength="3" maxlength="3">
     </label>
-    <label>Passwort
-      <input type="password" name="password" required>
-    </label>
-    <label>Passwort bestätigen
-      <input type="password" name="password_confirm" required>
-    </label>
-    <label>Rolle
+    <label><span>Rolle <span class="req-mark">*</span></span>
       <select name="role" required>
         {% for role_opt in role_options %}
         <option value="{{ role_opt['value'] }}">{{ role_opt['label'] }}{% if role_opt.get('is_admin') %} (Admin){% endif %}</option>
         {% endfor %}
       </select>
+    </label>
+    <label><span>Passwort <span class="req-mark">*</span></span>
+      <input type="password" name="password" required>
+    </label>
+    <label><span>Passwort bestätigen <span class="req-mark">*</span></span>
+      <input type="password" name="password_confirm" required>
     </label>
     <div class="full radio-group-label">
       <span class="field-label">Art des Mitarbeiters</span>
@@ -35,6 +38,10 @@
       <input type="checkbox" name="is_dashboard_invisible" value="1">
       Im Dashboard ausblenden
     </label>
+    <label class="full">Notizen
+      <textarea name="notes" rows="3" placeholder="Interne Notizen zum Benutzer …"></textarea>
+    </label>
+    <p class="full req-legend"><span class="req-mark">*</span> Pflichtfeld</p>
     <div class="actions-row">
       <button type="submit">Benutzer hinzufügen</button>
     </div>
@@ -103,25 +110,28 @@
                 </div>
                 <input type="hidden" name="action" value="update">
                 <input type="hidden" name="user_id" value="{{ account['id'] }}">
-                <label>Benutzername
+                <label>Vorname
+                  <input type="text" name="first_name" value="{{ account['first_name'] or '' }}" maxlength="50">
+                </label>
+                <label><span>Nachname <span class="req-mark">*</span></span>
                   <input type="text" name="username" value="{{ account['username'] }}" maxlength="25" required>
                 </label>
-                <label>Kürzel
-                  <input type="text" name="initials" minlength="3" maxlength="3" value="{{ account['initials'] }}" required>
+                <label><span>Kürzel <small class="muted">(3 Zeichen, optional)</small></span>
+                  <input type="text" name="initials" minlength="3" maxlength="3" value="{{ account['initials'] }}">
                 </label>
-                <label>Neues Passwort (optional)
-                  <input type="password" name="new_password">
-                </label>
-                <label>Neues Passwort bestätigen
-                  <input type="password" name="confirm_password">
-                </label>
-                <label>Rolle
+                <label><span>Rolle <span class="req-mark">*</span></span>
                   <select name="role" required>
                     {% for role_opt in role_options %}
                     {% set sel_role = 'admin' if (account['is_admin'] and account['role'] in ('', 'admin')) else account['role'] %}
                     <option value="{{ role_opt['value'] }}" {{ 'selected' if role_opt['value'] == sel_role else '' }}>{{ role_opt['label'] }}{% if role_opt.get('is_admin') %} (Admin){% endif %}</option>
                     {% endfor %}
                   </select>
+                </label>
+                <label>Neues Passwort
+                  <input type="password" name="new_password">
+                </label>
+                <label>Neues Passwort bestätigen
+                  <input type="password" name="confirm_password">
                 </label>
                 <div class="full radio-group-label">
                   <span class="field-label">Art des Mitarbeiters</span>
@@ -134,10 +144,14 @@
                   <input type="checkbox" name="is_inactive" value="1" {{ 'checked' if account['is_inactive'] else '' }}>
                   Inaktiv <small class="muted">(z. B. Urlaub / längere Abwesenheit)</small>
                 </label>
-                <label class="checkbox-label full">
+                <label class="checkbox-label">
                   <input type="checkbox" name="is_dashboard_invisible" value="1" {{ 'checked' if account['is_dashboard_invisible'] else '' }}>
                   Im Dashboard ausblenden
                 </label>
+                <label class="full">Notizen
+                  <textarea name="notes" rows="3">{{ account['notes'] or '' }}</textarea>
+                </label>
+                <p class="full req-legend"><span class="req-mark">*</span> Pflichtfeld</p>
                 <div class="actions-row">
                   <button type="submit">Speichern</button>
                 </div>

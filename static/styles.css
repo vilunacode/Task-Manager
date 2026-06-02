@@ -381,23 +381,42 @@ body[data-theme="dark"] select option:focus {
 button {
   border: none;
   border-radius: 10px;
-  background: var(--brand);
-  color: #fff;
+  background: rgba(15, 118, 110, 0.1);
+  color: var(--brand);
   padding: 10px 14px;
   font-weight: 700;
   cursor: pointer;
 }
 
 button:hover {
-  background: var(--brand-dark);
+  background: rgba(15, 118, 110, 0.18);
+}
+
+body[data-theme="dark"] button {
+  background: rgba(34, 184, 168, 0.14);
+  color: var(--brand);
+}
+
+body[data-theme="dark"] button:hover {
+  background: rgba(34, 184, 168, 0.24);
 }
 
 button.secondary {
-  background: #334155;
+  background: rgba(51, 65, 85, 0.09);
+  color: #475569;
 }
 
 button.secondary:hover {
-  background: #1e293b;
+  background: rgba(51, 65, 85, 0.17);
+}
+
+body[data-theme="dark"] button.secondary {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+}
+
+body[data-theme="dark"] button.secondary:hover {
+  background: rgba(148, 163, 184, 0.22);
 }
 
 button.danger {
@@ -426,6 +445,16 @@ body[data-theme="dark"] button.danger:hover {
 }
 
 .link-btn:hover {
+  background: none;
+  color: var(--text);
+}
+
+body[data-theme="dark"] .link-btn {
+  background: none;
+  color: var(--muted);
+}
+
+body[data-theme="dark"] .link-btn:hover {
   background: none;
   color: var(--text);
 }
@@ -664,6 +693,7 @@ body[data-theme="dark"] .task-tooltip {
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 4;
+  line-clamp: 4;
   -webkit-box-orient: vertical;
 }
 
@@ -1927,8 +1957,8 @@ td {
   gap: 6px;
   padding: 9px 16px;
   border-radius: 8px;
-  background: var(--brand);
-  color: #fff;
+  background: rgba(15, 118, 110, 0.1);
+  color: var(--brand);
   font-weight: 700;
   font-size: 0.9rem;
   text-decoration: none;
@@ -1937,7 +1967,7 @@ td {
 }
 
 .btn-finish:hover {
-  background: var(--brand-dark);
+  background: rgba(15, 118, 110, 0.18);
 }
 
 .btn-finish:hover svg,
@@ -2171,8 +2201,8 @@ body[data-theme="dark"] .ob-icon-btn-danger:hover {
   gap: 7px;
   padding: 10px 20px;
   border-radius: 9px;
-  background: var(--brand);
-  color: #fff;
+  background: rgba(15, 118, 110, 0.1);
+  color: var(--brand);
   font-weight: 700;
   font-size: 0.95rem;
   text-decoration: none;
@@ -2180,7 +2210,7 @@ body[data-theme="dark"] .ob-icon-btn-danger:hover {
 }
 
 .btn-finish-footer:hover {
-  background: var(--brand-dark);
+  background: rgba(15, 118, 110, 0.18);
 }
 
 
