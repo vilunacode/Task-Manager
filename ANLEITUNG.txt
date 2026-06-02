@@ -83,7 +83,7 @@ SCHRITT 3: EXE erstellen
      Task-Manager\dist\<App-Name>.exe
 
 6. Die EXE in einen beliebigen Ordner kopieren und starten.
-   Beim ersten Start wird automatisch eine neue Datenbank angelegt.
+   Beim ersten Start wird automatisch eine neue Datenbank und config.ini angelegt.
 
 
 ------------------------------------------------------------
