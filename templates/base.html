@@ -8,9 +8,11 @@
     :root {
       --role-admin-color: {{ app_settings['role_color_admin'] if app_settings else '#facc15' }};
       --role-user-color: {{ app_settings['role_color_user'] if app_settings else '#64748b' }};
+      --role-viewer-color: {{ app_settings['role_color_viewer'] if app_settings else '#94a3b8' }};
     }
     .badge-admin { background: var(--role-admin-color); }
     .badge-user { background: var(--role-user-color); }
+    .badge-viewer { background: var(--role-viewer-color); }
     {% for rule in custom_role_css_rules %}
     .{{ rule['class_name'] }} {
       background: {{ rule['color'] }};

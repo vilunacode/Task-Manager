@@ -4,7 +4,7 @@
 <div class="dashboard-shell">
 <section class="card">
   <div class="section-head">
-    <h1>Hallo {{ user['username'] }}</h1>
+    <h1>Benutzer: {{ user['username'] }}</h1>
     <span class="badge">{{ 'Administrator' if user['is_admin'] else 'Team' }}</span>
   </div>
 
@@ -12,6 +12,7 @@
     <div class="filter-stack">
       <div class="filter-tabs">
         <a href="{{ url_for('dashboard', filter='all') }}" class="chip {{ 'active' if filter_mode == 'all' else '' }}">Alle Tasks</a>
+        {% if user['role'] != 'viewer' %}
         <a href="{{ url_for('dashboard', filter='mine') }}" class="chip {{ 'active' if filter_mode == 'mine' else '' }}">Meine Tasks</a>
         <a href="{{ url_for('dashboard', filter='pings', ping_tab=ping_tab) }}" class="chip {{ 'active' if filter_mode == 'pings' else '' }} ping-chip">
           Pings
@@ -19,15 +20,18 @@
           <span class="ping-notification">{{ ping_unread_count }}</span>
           {% endif %}
         </a>
+        {% endif %}
       </div>
-      {% if filter_mode == 'pings' %}
+      {% if filter_mode == 'pings' and user['role'] != 'viewer' %}
       <div class="filter-tabs ping-subtabs">
         <a href="{{ url_for('dashboard', filter='pings', ping_tab='unread') }}" class="chip {{ 'active' if ping_tab == 'unread' else '' }}">ungelesene Pings</a>
         <a href="{{ url_for('dashboard', filter='pings', ping_tab='read') }}" class="chip {{ 'active' if ping_tab == 'read' else '' }}">gelesene Pings</a>
       </div>
       {% endif %}
     </div>
+    {% if user['role'] != 'viewer' %}
     <button type="button" id="open-create-task">Task erstellen</button>
+    {% endif %}
   </div>
 </section>
 
@@ -100,7 +104,7 @@
             <div class="assignee-badges">
               {% if task['assignees'] %}
                 {% for assignee in task['assignees'] %}
-                <span class="initial-badge {{ assignee['color_class'] }}" draggable="true" data-user-id="{{ assignee['id'] }}" data-task-id="{{ task['id'] }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
+                <span class="initial-badge {{ assignee['color_class'] }}{{ ' badge-inactive' if assignee['is_inactive'] else '' }}" draggable="true" data-user-id="{{ assignee['id'] }}" data-task-id="{{ task['id'] }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
                 {% endfor %}
               {% else %}
                 <span class="muted">Nicht zugewiesen</span>
@@ -132,6 +136,7 @@
   </div>
 </dialog>
 
+{% if user['role'] != 'viewer' %}
 <dialog id="create-task-dialog" class="task-dialog">
   <form method="post" action="{{ url_for('create_task') }}" class="form-grid two-columns task-edit-form">
     <div class="dialog-head full">
@@ -153,17 +158,26 @@
       <textarea name="description" rows="4" required></textarea>
       <small class="field-warning-hint">&#9888; Bitte keine persönlichen Daten angeben.</small>
     </label>
-    {% if room_floors_data %}
-    <label class="field-compact">Ebene
-      <select id="create-floor-select" onchange="updateCreateRoomSelect()">
-        <option value="">-- Ebene wählen --</option>
-        {% for floor in room_floors_data %}
-        <option value="{{ floor.id }}">{{ floor.name }}</option>
+    {% if room_locations_data %}
+    {% if room_locations_data | length > 1 %}
+    <label class="field-compact">Standort
+    {% else %}
+    <label class="field-compact" style="display:none;">
+    {% endif %}
+      <select id="create-location-select" onchange="updateCreateFloorSelect()">
+        <option value="">-- Standort wählen --</option>
+        {% for loc in room_locations_data %}
+        <option value="{{ loc.id }}">{{ loc.name }}</option>
         {% endfor %}
       </select>
     </label>
+    <label class="field-compact">Ebene
+      <select id="create-floor-select" onchange="updateCreateRoomSelect()" disabled>
+        <option value="">-- zuerst Standort wählen --</option>
+      </select>
+    </label>
     <label class="field-compact">Raum
-      <select name="room" id="create-room-select">
+      <select name="room" id="create-room-select" disabled>
         <option value="">-- zuerst Ebene wählen --</option>
       </select>
     </label>
@@ -210,21 +224,18 @@
     </div>
   </form>
 </dialog>
+{% endif %}
 
-<dialog id="close-task-dialog" class="task-dialog">
-  <form method="dialog" id="close-task-form" class="form-grid">
-    <div class="dialog-head full">
-      <h2>Task schließen</h2>
+<dialog id="close-task-dialog" class="task-dialog confirm-dialog-small">
+  <form method="dialog" id="close-task-form">
+    <div class="dialog-head">
+      <strong>Task schließen?</strong>
       <button type="button" class="link-btn" onclick="document.getElementById('close-task-dialog-abort').click()">✕</button>
     </div>
-    <p class="muted">Bist du dir sicher dass du diese Task schließen möchtest? Du kannst den Task dann nicht mehr zurücksetzen!</p>
-    <label><span>Begründung <span class="req-mark">*</span></span>
-      <textarea id="close-task-reason" rows="4" required></textarea>
-      <small class="field-warning-hint">&#9888; Bitte keine persönlichen Daten angeben.</small>
-    </label>
+    <p class="muted" style="margin: 10px 0 18px; line-height: 1.5;">Soll diese Task wirklich geschlossen werden?</p>
     <div class="compact-actions">
       <button type="button" class="secondary" id="close-task-dialog-abort">Abbrechen</button>
-      <button type="submit">Task schließen</button>
+      <button type="submit">Schließen</button>
     </div>
   </form>
 </dialog>
@@ -232,17 +243,40 @@
 <div id="task-tooltip" class="task-tooltip" hidden></div>
 
 <script>
-  const ROOM_FLOORS_DATA = {{ room_floors_data | tojson }};
+  const ROOM_LOCATIONS_DATA = {{ room_locations_data | tojson }};
+  if (ROOM_LOCATIONS_DATA.length === 1) {
+    const _locSel = document.getElementById("create-location-select");
+    if (_locSel) { _locSel.value = ROOM_LOCATIONS_DATA[0].id; updateCreateFloorSelect(); }
+  }
+  function updateCreateFloorSelect() {
+    const locSel = document.getElementById("create-location-select");
+    const floorSel = document.getElementById("create-floor-select");
+    const roomSel = document.getElementById("create-room-select");
+    if (!locSel || !floorSel || !roomSel) return;
+    const locId = parseInt(locSel.value);
+    const loc = ROOM_LOCATIONS_DATA.find(l => l.id === locId);
+    floorSel.innerHTML = '<option value="">-- Ebene wählen --</option>';
+    roomSel.innerHTML = '<option value="">-- zuerst Ebene wählen --</option>';
+    floorSel.disabled = !loc;
+    roomSel.disabled = true;
+    if (!loc) return;
+    loc.floors.forEach(f => floorSel.appendChild(new Option(f.name, f.id)));
+  }
   function updateCreateRoomSelect() {
+    const locSel = document.getElementById("create-location-select");
     const floorSel = document.getElementById("create-floor-select");
     const roomSel = document.getElementById("create-room-select");
     if (!floorSel || !roomSel) return;
+    const locId = locSel ? parseInt(locSel.value) : null;
+    const loc = ROOM_LOCATIONS_DATA.find(l => l.id === locId);
     const floorId = parseInt(floorSel.value);
-    const floor = ROOM_FLOORS_DATA.find(f => f.id === floorId);
+    const floor = loc ? loc.floors.find(f => f.id === floorId) : null;
     roomSel.innerHTML = '<option value="">-- Raum wählen --</option>';
+    roomSel.disabled = !floor;
     if (!floor) return;
-    roomSel.appendChild(new Option(floor.name, floor.name, true, true));
-    floor.rooms.forEach(r => roomSel.appendChild(new Option(r.name, r.name)));
+    const locName = loc ? loc.name : "";
+    roomSel.appendChild(new Option(`${locName} / ${floor.name}`, `${locName} / ${floor.name}`, true, true));
+    floor.rooms.forEach(r => roomSel.appendChild(new Option(r.name, `${locName} / ${floor.name} / ${r.name}`)));
   }
 </script>
 <script>
@@ -252,7 +286,6 @@
     const closeBtn = document.getElementById("close-create-task");
     const closeTaskDialog = document.getElementById("close-task-dialog");
     const closeTaskForm = document.getElementById("close-task-form");
-    const closeTaskReason = document.getElementById("close-task-reason");
     const closeTaskDialogAbort = document.getElementById("close-task-dialog-abort");
     const dropColumns = document.querySelectorAll(".drop-column");
     const draggableMembers = document.querySelectorAll(".sidebar-draggable-member");
@@ -333,7 +366,7 @@
       }
       return assignees
         .map((assignee) => {
-          const classes = `initial-badge ${assignee.color_class || "badge-dev"}`;
+          const classes = `initial-badge ${assignee.color_class || "badge-dev"}${assignee.is_inactive ? " badge-inactive" : ""}`;
           const title = `${escapeHtml(assignee.username || "")} (${escapeHtml(assignee.role_label || "")})`;
           const initials = escapeHtml(assignee.initials || "USR");
           const badgeColor = escapeHtml(assignee.badge_color || "");
@@ -711,19 +744,10 @@
         closeTaskDialog.close();
         return;
       }
-      if (!closeTaskReason.checkValidity()) {
-        closeTaskReason.reportValidity();
-        return;
-      }
-      const reason = closeTaskReason.value.trim();
-      if (!reason) {
-        closeTaskReason.reportValidity();
-        return;
-      }
       const taskId = pendingCloseTaskId;
       pendingCloseTaskId = null;
       closeTaskDialog.close();
-      submitStatusChange(taskId, "closed", reason);
+      submitStatusChange(taskId, "closed");
     });
 
     const setSelfAssignTargets = (enable) => {
@@ -777,7 +801,6 @@
         }
         if (targetStatus === "closed") {
           pendingCloseTaskId = taskId;
-          closeTaskReason.value = "";
           closeTaskDialog.showModal();
           return;
         }
@@ -871,8 +894,34 @@
       }
     };
 
+    const pollAndSyncSidebar = async () => {
+      try {
+        const response = await fetch("{{ url_for('sidebar_users_api') }}", {
+          headers: { "Accept": "application/json" },
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        const users = Array.isArray(data.users) ? data.users : [];
+        users.forEach((member) => {
+          const item = document.querySelector(`.user-badge-item[data-user-id="${member.id}"]`);
+          if (!item) return;
+          const badge = item.querySelector(".initial-badge");
+          const score = item.querySelector(".user-task-score");
+          const inactive = !!member.is_inactive;
+          item.classList.toggle("sidebar-member-inactive", inactive);
+          item.title = `${member.username} (${member.role_label})${inactive ? " — inaktiv" : ""}`;
+          if (badge) badge.classList.toggle("badge-inactive", inactive);
+          if (score) score.textContent = String(member.assigned_task_count || 0);
+        });
+      } catch (_) {
+        // Ignore transient polling issues.
+      }
+    };
+
     if (columns.length) {
       setInterval(pollAndSyncDashboard, REFRESH_INTERVAL_MS);
+      setInterval(pollAndSyncSidebar, REFRESH_INTERVAL_MS);
     }
   })();
 </script>

@@ -257,6 +257,8 @@ DEFAULT_APP_SETTINGS = {
     "role_label_admin": "Admin",
     "role_color_user": "#64748b",
     "role_label_user": "Benutzer",
+    "role_color_viewer": "#94a3b8",
+    "role_label_viewer": "Nur Ansicht",
     "new_task_tone": "classic",
     "calendar_disabled": "1",
     "favicon_filename": "",
@@ -290,6 +292,7 @@ CARD_VIEW_COMPACT = "compact"
 MEMBER_TYPE_REGULAR = "regular"
 MEMBER_TYPE_TRAINEE = "trainee"
 VALID_MEMBER_TYPES = {MEMBER_TYPE_REGULAR, MEMBER_TYPE_TRAINEE}
+ROLE_VIEWER = "viewer"
 MAX_USERNAME_LENGTH = 25
 MAX_TASK_TITLE_LENGTH = 200
 MAX_TASK_DESCRIPTION_LENGTH = 5000
@@ -338,6 +341,15 @@ def auto_reinit_db_if_missing():
         "SELECT name FROM sqlite_master WHERE type='table' AND name='users'"
     ).fetchone() is None:
         init_db()
+
+
+@app.before_request
+def auto_reactivate_expired_inactive_users():
+    now_iso = datetime.now(APP_TIMEZONE).strftime("%Y-%m-%dT%H:%M")
+    execute(
+        "UPDATE users SET is_inactive = 0, inactive_until = NULL WHERE is_inactive = 1 AND inactive_until IS NOT NULL AND inactive_until <= ?",
+        (now_iso,),
+    )
 
 
 def init_db() -> None:
@@ -446,10 +458,18 @@ def init_db() -> None:
             PRIMARY KEY (task_id, user_id)
         );
 
-        CREATE TABLE IF NOT EXISTS room_floors (
+        CREATE TABLE IF NOT EXISTS room_locations (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
             created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS room_floors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            location_id INTEGER REFERENCES room_locations(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(location_id, name)
         );
 
         CREATE TABLE IF NOT EXISTS room_entries (
@@ -499,6 +519,8 @@ def init_db() -> None:
         db.execute("ALTER TABLE users ADD COLUMN last_seen_ping_at TEXT")
     if "is_inactive" not in columns:
         db.execute("ALTER TABLE users ADD COLUMN is_inactive INTEGER NOT NULL DEFAULT 0")
+    if "inactive_until" not in columns:
+        db.execute("ALTER TABLE users ADD COLUMN inactive_until TEXT")
     if "member_type" not in columns:
         db.execute(f"ALTER TABLE users ADD COLUMN member_type TEXT NOT NULL DEFAULT '{MEMBER_TYPE_REGULAR}'")
     if "is_dashboard_invisible" not in columns:
@@ -536,6 +558,21 @@ def init_db() -> None:
     custom_role_columns = {row["name"] for row in db.execute("PRAGMA table_info(custom_roles)").fetchall()}
     if "is_admin" not in custom_role_columns:
         db.execute("ALTER TABLE custom_roles ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+
+    # Migrate room_floors to include location_id (new Standort level)
+    floor_columns = {row["name"] for row in db.execute("PRAGMA table_info(room_floors)").fetchall()}
+    if "location_id" not in floor_columns:
+        # Ensure at least one location exists before assigning floors
+        existing_loc = db.execute("SELECT id FROM room_locations LIMIT 1").fetchone()
+        if existing_loc is None:
+            db.execute(
+                "INSERT OR IGNORE INTO room_locations (name, created_at) VALUES ('Oberhausen', ?)",
+                (now_iso(),),
+            )
+            existing_loc = db.execute("SELECT id FROM room_locations LIMIT 1").fetchone()
+        db.execute("ALTER TABLE room_floors ADD COLUMN location_id INTEGER REFERENCES room_locations(id)")
+        if existing_loc:
+            db.execute("UPDATE room_floors SET location_id = ? WHERE location_id IS NULL", (existing_loc["id"],))
 
     comment_col_info = {row["name"]: row for row in db.execute("PRAGMA table_info(task_comments)").fetchall()}
     if "updated_at" not in comment_col_info:
@@ -817,6 +854,16 @@ def set_app_setting(key: str, value: str) -> None:
     g.pop("app_settings", None)
 
 
+def parse_inactive_until(date_str: str, time_str: str) -> str | None:
+    """Combines date and optional time into 'YYYY-MM-DDTHH:MM'. Returns None if date is empty."""
+    date_str = date_str.strip()
+    time_str = time_str.strip()
+    if not date_str:
+        return None
+    t = time_str if time_str else "00:00"
+    return f"{date_str}T{t}"
+
+
 def parse_int_setting(value: str, *, min_value: int, max_value: int) -> int | None:
     try:
         parsed = int(value)
@@ -1021,9 +1068,11 @@ def role_options() -> list[dict]:
     settings = app_settings()
     admin_label = settings.get("role_label_admin", "Admin")
     user_label = settings.get("role_label_user", "Benutzer")
+    viewer_label = settings.get("role_label_viewer", "Nur Ansicht")
     options = [
         {"value": "admin", "label": admin_label, "is_admin": True},
         {"value": "user", "label": user_label, "is_admin": False},
+        {"value": ROLE_VIEWER, "label": viewer_label, "is_admin": False},
     ]
     for role in active_custom_roles():
         options.append({
@@ -1040,28 +1089,41 @@ def resolve_role_assignment(role_value: str) -> tuple[int, str]:
         return 1, ""
     if role_value == "user":
         return 0, "user"
+    if role_value == ROLE_VIEWER:
+        return 0, ROLE_VIEWER
     custom = custom_roles_map().get(role_value)
     if custom:
         return (1 if custom.get("is_admin") else 0), role_value
     return 0, ""
 
 
-def get_all_rooms_by_floor() -> list[dict]:
-    if "rooms_by_floor" not in g:
-        floors = query_all("SELECT id, name FROM room_floors ORDER BY name ASC")
+def get_all_rooms_by_location() -> list[dict]:
+    if "rooms_by_location" not in g:
+        locations = query_all("SELECT id, name FROM room_locations ORDER BY name ASC")
         result = []
-        for floor in floors:
-            rooms = query_all(
-                "SELECT id, name FROM room_entries WHERE floor_id = ? ORDER BY name ASC",
-                (floor["id"],),
+        for loc in locations:
+            floors = query_all(
+                "SELECT id, name FROM room_floors WHERE location_id = ? ORDER BY name ASC",
+                (loc["id"],),
             )
+            floors_list = []
+            for floor in floors:
+                rooms = query_all(
+                    "SELECT id, name FROM room_entries WHERE floor_id = ? ORDER BY name ASC",
+                    (floor["id"],),
+                )
+                floors_list.append({
+                    "id": floor["id"],
+                    "name": floor["name"],
+                    "rooms": [{"id": r["id"], "name": r["name"]} for r in rooms],
+                })
             result.append({
-                "id": floor["id"],
-                "name": floor["name"],
-                "rooms": [{"id": r["id"], "name": r["name"]} for r in rooms],
+                "id": loc["id"],
+                "name": loc["name"],
+                "floors": floors_list,
             })
-        g.rooms_by_floor = result
-    return g.rooms_by_floor
+        g.rooms_by_location = result
+    return g.rooms_by_location
 
 
 def normalize_ticket_category(value: str) -> str:
@@ -1085,6 +1147,8 @@ def ticket_category_options() -> list[dict[str, str]]:
 
 
 def role_label(role: str, is_admin: int) -> str:
+    if role == ROLE_VIEWER:
+        return app_settings().get("role_label_viewer", "Nur Ansicht")
     if role == "user":
         return app_settings().get("role_label_user", "Benutzer")
     custom = custom_roles_map().get(role)
@@ -1096,6 +1160,8 @@ def role_label(role: str, is_admin: int) -> str:
 
 
 def badge_color_class(role: str, is_admin: int) -> str:
+    if role == ROLE_VIEWER:
+        return "badge-viewer"
     if role == "user":
         return "badge-user"
     if role in custom_roles_map():
@@ -1106,6 +1172,8 @@ def badge_color_class(role: str, is_admin: int) -> str:
 
 
 def badge_color_value(role: str, is_admin: int) -> str:
+    if role == ROLE_VIEWER:
+        return app_settings().get("role_color_viewer", "#94a3b8")
     if role == "user":
         return app_settings().get("role_color_user", "#64748b")
     custom = custom_roles_map().get(role)
@@ -1148,7 +1216,8 @@ def task_assignees_map(task_ids: list[int]):
             u.username,
             u.initials,
             u.role,
-            u.is_admin
+            u.is_admin,
+            u.is_inactive
         FROM task_assignees ta
         JOIN users u ON u.id = ta.user_id
                 WHERE ta.task_id IN ({placeholders})
@@ -1168,6 +1237,7 @@ def task_assignees_map(task_ids: list[int]):
                 "role_label": role_label(row["role"], row["is_admin"]),
                 "color_class": badge_color_class(row["role"], row["is_admin"]),
                 "badge_color": badge_color_value(row["role"], row["is_admin"]),
+                "is_inactive": bool(row["is_inactive"]),
             }
         )
     return mapping
@@ -1760,6 +1830,22 @@ def admin_required(view):
     return wrapped_view
 
 
+def not_viewer(view):
+    """Blocks access for users with the viewer role (read-only system role)."""
+    @wraps(view)
+    def wrapped_view(*args, **kwargs):
+        user = current_user()
+        if user is None:
+            flash("Bitte zuerst anmelden.", "error")
+            return redirect(url_for("login"))
+        if user["role"] == ROLE_VIEWER and not user["is_admin"]:
+            flash("Ihr Konto hat nur Leserechte. Diese Aktion ist nicht erlaubt.", "error")
+            return redirect(request.referrer or url_for("dashboard"))
+        return view(*args, **kwargs)
+
+    return wrapped_view
+
+
 def status_label(status: str) -> str:
     labels = {
         STATUS_OPEN: "Offene Tasks",
@@ -1803,7 +1889,7 @@ def inject_helpers():
         "tone_options": sorted(TONE_OPTIONS.keys()),
         "closed_task_count": closed_task_count,
         "custom_role_css_rules": custom_role_css_rules(),
-        "room_floors_data": get_all_rooms_by_floor(),
+        "room_locations_data": get_all_rooms_by_location(),
     }
 
 
@@ -1892,7 +1978,7 @@ def onboarding():
                 return redirect(url_for("onboarding", tab=active_tab))
 
             role_key = normalize_custom_role_key(role_label_input)
-            if not role_key or role_key in ("admin", "user"):
+            if not role_key or role_key in ("admin", "user", ROLE_VIEWER):
                 flash("Rollenname ist ungültig.", "error")
                 return redirect(url_for("onboarding", tab=active_tab))
 
@@ -2244,6 +2330,8 @@ def dashboard():
     filter_mode = request.args.get("filter", "all").strip().lower()
     if filter_mode not in VALID_DASHBOARD_FILTERS:
         filter_mode = "all"
+    if user["role"] == ROLE_VIEWER and not user["is_admin"] and filter_mode in ("mine", "pings"):
+        return redirect(url_for("dashboard", filter="all"))
 
     ping_tab = request.args.get("ping_tab", "unread").strip().lower()
     if ping_tab not in VALID_PING_TABS:
@@ -2306,6 +2394,12 @@ def overview():
         grouped=grouped,
         show_sidebar=False,
     )
+
+
+@app.route("/api/sidebar/users")
+@login_required
+def sidebar_users_api():
+    return jsonify({"users": sidebar_users()})
 
 
 @app.route("/api/overview/tasks")
@@ -2521,6 +2615,7 @@ def calendar_page():
 
 @app.route("/settings", methods=["GET", "POST"])
 @login_required
+@not_viewer
 def settings_page():
     user = current_user()
 
@@ -2738,23 +2833,72 @@ def settings_page():
                 flash("Favicon wurde entfernt.", "success")
             return redirect(url_for("settings_page"))
 
+        if action == "create-location":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Standorte erstellen.", "error")
+                return redirect(url_for("settings_page"))
+            location_name = request.form.get("location_name", "").strip()
+            if not location_name:
+                flash("Bitte einen Standortnamen angeben.", "error")
+                return redirect(url_for("settings_page"))
+            if len(location_name) > 60:
+                flash("Standortname darf maximal 60 Zeichen lang sein.", "error")
+                return redirect(url_for("settings_page"))
+            existing = query_one("SELECT id FROM room_locations WHERE lower(name) = lower(?)", (location_name,))
+            if existing:
+                flash("Ein Standort mit diesem Namen existiert bereits.", "error")
+                return redirect(url_for("settings_page"))
+            execute("INSERT INTO room_locations (name, created_at) VALUES (?, ?)", (location_name, now_iso()))
+            g.pop("rooms_by_location", None)
+            flash(f'Standort "{location_name}" wurde erstellt.', "success")
+            return redirect(url_for("settings_page"))
+
+        if action == "delete-location":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Standorte löschen.", "error")
+                return redirect(url_for("settings_page"))
+            location_id = parse_int_value(request.form.get("location_id"))
+            if location_id is None:
+                flash("Ungültiger Standort.", "error")
+                return redirect(url_for("settings_page"))
+            loc = query_one("SELECT id, name FROM room_locations WHERE id = ?", (location_id,))
+            if loc is None:
+                flash("Standort nicht gefunden.", "error")
+                return redirect(url_for("settings_page"))
+            execute("DELETE FROM room_floors WHERE location_id = ?", (location_id,))
+            execute("DELETE FROM room_locations WHERE id = ?", (location_id,))
+            g.pop("rooms_by_location", None)
+            flash(f'Standort "{loc["name"]}" und alle zugehörigen Ebenen und Räume wurden entfernt.', "success")
+            return redirect(url_for("settings_page"))
+
         if action == "create-floor":
             if not user["is_admin"]:
                 flash("Nur Administratoren dürfen Ebenen erstellen.", "error")
                 return redirect(url_for("settings_page"))
+            location_id = parse_int_value(request.form.get("location_id"))
             floor_name = request.form.get("floor_name", "").strip()
-            if not floor_name:
-                flash("Bitte einen Ebenennamen angeben.", "error")
+            if location_id is None or not floor_name:
+                flash("Bitte Standort und Ebenenname angeben.", "error")
                 return redirect(url_for("settings_page"))
             if len(floor_name) > 40:
                 flash("Ebenenname darf maximal 40 Zeichen lang sein.", "error")
                 return redirect(url_for("settings_page"))
-            existing = query_one("SELECT id FROM room_floors WHERE lower(name) = lower(?)", (floor_name,))
-            if existing:
-                flash("Eine Ebene mit diesem Namen existiert bereits.", "error")
+            loc = query_one("SELECT id FROM room_locations WHERE id = ?", (location_id,))
+            if loc is None:
+                flash("Standort nicht gefunden.", "error")
                 return redirect(url_for("settings_page"))
-            execute("INSERT INTO room_floors (name, created_at) VALUES (?, ?)", (floor_name, now_iso()))
-            g.pop("rooms_by_floor", None)
+            existing = query_one(
+                "SELECT id FROM room_floors WHERE location_id = ? AND lower(name) = lower(?)",
+                (location_id, floor_name),
+            )
+            if existing:
+                flash("Eine Ebene mit diesem Namen existiert an diesem Standort bereits.", "error")
+                return redirect(url_for("settings_page"))
+            execute(
+                "INSERT INTO room_floors (location_id, name, created_at) VALUES (?, ?, ?)",
+                (location_id, floor_name, now_iso()),
+            )
+            g.pop("rooms_by_location", None)
             flash(f'Ebene "{floor_name}" wurde erstellt.', "success")
             return redirect(url_for("settings_page"))
 
@@ -2771,7 +2915,7 @@ def settings_page():
                 flash("Ebene nicht gefunden.", "error")
                 return redirect(url_for("settings_page"))
             execute("DELETE FROM room_floors WHERE id = ?", (floor_id,))
-            g.pop("rooms_by_floor", None)
+            g.pop("rooms_by_location", None)
             flash(f'Ebene "{floor["name"]}" und alle zugehörigen Räume wurden entfernt.', "success")
             return redirect(url_for("settings_page"))
 
@@ -2802,7 +2946,7 @@ def settings_page():
                 "INSERT INTO room_entries (floor_id, name, created_at) VALUES (?, ?, ?)",
                 (floor_id, room_name, now_iso()),
             )
-            g.pop("rooms_by_floor", None)
+            g.pop("rooms_by_location", None)
             flash(f'Raum "{room_name}" wurde hinzugefügt.', "success")
             return redirect(url_for("settings_page"))
 
@@ -2819,7 +2963,7 @@ def settings_page():
                 flash("Raum nicht gefunden.", "error")
                 return redirect(url_for("settings_page"))
             execute("DELETE FROM room_entries WHERE id = ?", (room_id,))
-            g.pop("rooms_by_floor", None)
+            g.pop("rooms_by_location", None)
             flash(f'Raum "{room["name"]}" wurde entfernt.', "success")
             return redirect(url_for("settings_page"))
 
@@ -2940,6 +3084,7 @@ def parse_task_form(form) -> tuple[dict | None, str | None]:
 
 @app.route("/tasks/create", methods=["POST"])
 @login_required
+@not_viewer
 def create_task():
     user = current_user()
 
@@ -3152,6 +3297,7 @@ def task_with_details(task_id: int):
 
 @app.route("/tasks/<int:task_id>/status", methods=["POST"])
 @login_required
+@not_viewer
 def update_task_status(task_id: int):
     user = current_user()
     new_status = request.form.get("status", "").strip()
@@ -3182,22 +3328,18 @@ def update_task_status(task_id: int):
 
     if new_status == STATUS_CLOSED:
         close_reason = request.form.get("close_reason", "").strip()
-        if not close_reason:
-            flash("Bitte eine Begründung angeben, warum die Task geschlossen wird.", "error")
-            return redirect(url_for("dashboard", filter=return_filter))
-
         execute(
             """
             UPDATE tasks
             SET status = ?, updated_at = ?, close_reason = ?, closed_at = ?, closed_by = ?
             WHERE id = ?
             """,
-            (new_status, now_iso(), close_reason, now_iso(), user["id"], task_id),
+            (new_status, now_iso(), close_reason or None, now_iso(), user["id"], task_id),
         )
         log_event(
             user, "task_closed", "Task geschlossen",
             task_id=task_id, task_title=task["title"],
-            details=f"Grund: {close_reason}",
+            details=f"Grund: {close_reason}" if close_reason else None,
         )
         flash("Task wurde geschlossen.", "success")
         return redirect(url_for("dashboard", filter=return_filter))
@@ -3217,6 +3359,7 @@ def update_task_status(task_id: int):
 
 @app.route("/tasks/<int:task_id>/assignees/add", methods=["POST"])
 @login_required
+@not_viewer
 def add_task_assignee(task_id: int):
     user = current_user()
     return_filter = request.form.get("return_filter", "all").strip().lower()
@@ -3267,6 +3410,7 @@ def add_task_assignee(task_id: int):
 
 @app.route("/tasks/<int:task_id>/assignees/self-assign", methods=["POST"])
 @login_required
+@not_viewer
 def self_assign_task(task_id: int):
     user = current_user()
     return_filter = request.form.get("return_filter", "all").strip().lower()
@@ -3294,6 +3438,7 @@ def self_assign_task(task_id: int):
 
 @app.route("/tasks/<int:task_id>/assignees/remove", methods=["POST"])
 @login_required
+@not_viewer
 def remove_task_assignee(task_id: int):
     user = current_user()
     return_filter = request.form.get("return_filter", "all").strip().lower()
@@ -3328,6 +3473,7 @@ def remove_task_assignee(task_id: int):
 
 @app.route("/tasks/<int:task_id>/assignees/self-remove", methods=["POST"])
 @login_required
+@not_viewer
 def self_remove_task(task_id: int):
     user = current_user()
     return_filter = request.form.get("return_filter", "all").strip().lower()
@@ -3430,6 +3576,7 @@ def task_detail(task_id: int):
 
 @app.route("/tasks/<int:task_id>/comments", methods=["POST"])
 @login_required
+@not_viewer
 def add_task_comment(task_id: int):
     user = current_user()
     task = query_one("SELECT id, title, status FROM tasks WHERE id = ?", (task_id,))
@@ -3508,6 +3655,7 @@ def add_task_comment(task_id: int):
 
 @app.route("/tasks/<int:task_id>/comments/<int:comment_id>/edit", methods=["POST"])
 @login_required
+@not_viewer
 def edit_task_comment(task_id: int, comment_id: int):
     user = current_user()
     task = query_one("SELECT id, title, status FROM tasks WHERE id = ?", (task_id,))
@@ -3554,6 +3702,7 @@ def edit_task_comment(task_id: int, comment_id: int):
 
 @app.route("/tasks/<int:task_id>/comments/<int:comment_id>/delete", methods=["POST"])
 @login_required
+@not_viewer
 def delete_task_comment(task_id: int, comment_id: int):
     user = current_user()
     task = query_one("SELECT id, title, status FROM tasks WHERE id = ?", (task_id,))
@@ -3588,6 +3737,7 @@ def delete_task_comment(task_id: int, comment_id: int):
 
 @app.route("/tasks/<int:task_id>/edit", methods=["POST"])
 @login_required
+@not_viewer
 def edit_task(task_id: int):
     user = current_user()
     task = query_one("SELECT * FROM tasks WHERE id = ?", (task_id,))
@@ -3791,7 +3941,7 @@ def manage_users():
                 flash("Rollenname ist ungültig.", "error")
                 return redirect(url_for("manage_users"))
 
-            if role_key in ("admin", "user"):
+            if role_key in ("admin", "user", ROLE_VIEWER):
                 flash("Diese Rolle ist bereits reserviert.", "error")
                 return redirect(url_for("manage_users"))
 
@@ -3837,6 +3987,13 @@ def manage_users():
                 if role_label_upd:
                     set_app_setting("role_label_user", role_label_upd)
                 flash("Benutzer-Rolle wurde aktualisiert.", "success")
+                return redirect(url_for("manage_users"))
+
+            if role_key == ROLE_VIEWER:
+                set_app_setting("role_color_viewer", role_color)
+                if role_label_upd:
+                    set_app_setting("role_label_viewer", role_label_upd)
+                flash("Ansicht-Rolle wurde aktualisiert.", "success")
                 return redirect(url_for("manage_users"))
 
             if not role_label_upd:
@@ -3950,6 +4107,10 @@ def manage_users():
                 return redirect(url_for("manage_users"))
 
             is_inactive = 1 if request.form.get("is_inactive") == "1" else 0
+            inactive_until = parse_inactive_until(
+                request.form.get("inactive_until_date", ""),
+                request.form.get("inactive_until_time", ""),
+            ) if is_inactive else None
             member_type = request.form.get("member_type", MEMBER_TYPE_REGULAR)
             if member_type not in VALID_MEMBER_TYPES:
                 member_type = MEMBER_TYPE_REGULAR
@@ -3966,7 +4127,7 @@ def manage_users():
                 execute(
                     """
                     UPDATE users
-                    SET username = ?, initials = ?, role = ?, is_admin = ?, is_inactive = ?, member_type = ?, is_dashboard_invisible = ?, first_name = ?, notes = ?, password_hash = ?
+                    SET username = ?, initials = ?, role = ?, is_admin = ?, is_inactive = ?, inactive_until = ?, member_type = ?, is_dashboard_invisible = ?, first_name = ?, notes = ?, password_hash = ?
                     WHERE id = ?
                     """,
                     (
@@ -3975,6 +4136,7 @@ def manage_users():
                         role,
                         is_admin,
                         is_inactive,
+                        inactive_until,
                         member_type,
                         is_dashboard_invisible,
                         first_name,
@@ -3991,10 +4153,10 @@ def manage_users():
                 execute(
                     """
                     UPDATE users
-                    SET username = ?, initials = ?, role = ?, is_admin = ?, is_inactive = ?, member_type = ?, is_dashboard_invisible = ?, first_name = ?, notes = ?
+                    SET username = ?, initials = ?, role = ?, is_admin = ?, is_inactive = ?, inactive_until = ?, member_type = ?, is_dashboard_invisible = ?, first_name = ?, notes = ?
                     WHERE id = ?
                     """,
-                    (username, initials, role, is_admin, is_inactive, member_type, is_dashboard_invisible, first_name, notes, target_id),
+                    (username, initials, role, is_admin, is_inactive, inactive_until, member_type, is_dashboard_invisible, first_name, notes, target_id),
                 )
                 if target["id"] == current["id"]:
                     flash("Eigener Account wurde aktualisiert.", "success")
@@ -4010,10 +4172,21 @@ def manage_users():
                 flash("Benutzer nicht gefunden.", "error")
                 return redirect(url_for("manage_users"))
             new_val = 0 if target["is_inactive"] else 1
-            execute("UPDATE users SET is_inactive = ? WHERE id = ?", (new_val, target_id))
             if new_val:
+                inactive_until = parse_inactive_until(
+                    request.form.get("inactive_until_date", ""),
+                    request.form.get("inactive_until_time", ""),
+                )
+                execute(
+                    "UPDATE users SET is_inactive = ?, inactive_until = ? WHERE id = ?",
+                    (1, inactive_until, target_id),
+                )
                 flash("Benutzer wurde als inaktiv markiert.", "success")
             else:
+                execute(
+                    "UPDATE users SET is_inactive = 0, inactive_until = NULL WHERE id = ?",
+                    (target_id,),
+                )
                 flash("Benutzer wurde wieder als aktiv markiert.", "success")
             return redirect(url_for("manage_users"))
 
@@ -4073,6 +4246,7 @@ def manage_users():
             initials,
             role,
             is_inactive,
+            inactive_until,
             is_dashboard_invisible,
             member_type,
             first_name,
@@ -4107,6 +4281,8 @@ def manage_users():
         admin_label=settings.get("role_label_admin", "Admin"),
         user_color=settings.get("role_color_user", "#64748b"),
         user_label=settings.get("role_label_user", "Benutzer"),
+        viewer_color=settings.get("role_color_viewer", "#94a3b8"),
+        viewer_label=settings.get("role_label_viewer", "Nur Ansicht"),
         show_sidebar=False,
     )
 

@@ -70,7 +70,7 @@
           <div class="assignee-badges">
             {% if task['assignees'] %}
               {% for assignee in task['assignees'] %}
-              <span class="initial-badge {{ assignee['color_class'] }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
+              <span class="initial-badge {{ assignee['color_class'] }}{{ ' badge-inactive' if assignee['is_inactive'] else '' }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
               {% endfor %}
             {% else %}
               <span class="muted">Nicht zugewiesen</span>
@@ -143,7 +143,7 @@
           <div class="assignee-badges">
             {% if task['assignees'] %}
               {% for assignee in task['assignees'] %}
-              <span class="initial-badge {{ assignee['color_class'] }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
+              <span class="initial-badge {{ assignee['color_class'] }}{{ ' badge-inactive' if assignee['is_inactive'] else '' }}" title="{{ assignee['username'] }} ({{ assignee['role_label'] }})">{{ assignee['initials'] }}</span>
               {% endfor %}
             {% else %}
               <span class="muted">Nicht zugewiesen</span>

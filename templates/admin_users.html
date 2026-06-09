@@ -86,15 +86,51 @@
           <td><small class="muted">{{ 'Trainingsmitarbeiter' if account['member_type'] == 'trainee' else 'Mitarbeiter' }}</small></td>
           <td>{{ account['role_label'] }}</td>
           <td>
+            {% if account['is_inactive'] %}
             <form method="post" class="inline-form">
               <input type="hidden" name="action" value="toggle-inactive">
               <input type="hidden" name="user_id" value="{{ account['id'] }}">
-              {% if account['is_inactive'] %}
               <button type="submit" class="secondary small-btn">Aktivieren</button>
-              {% else %}
-              <button type="submit" class="secondary small-btn">Inaktiv setzen</button>
-              {% endif %}
             </form>
+            {% if account['inactive_until'] %}
+            {% set iu = account['inactive_until'] %}
+            <small class="muted">bis {{ iu[8:10] }}.{{ iu[5:7] }}.{{ iu[:4] }} - {{ iu[11:16] }} Uhr</small>
+            {% else %}
+            <small class="muted">unbegrenzt</small>
+            {% endif %}
+            {% else %}
+            <button type="button" class="secondary small-btn" onclick="document.getElementById('inactive-dialog-{{ account.id }}').showModal()">Inaktiv setzen</button>
+            <dialog id="inactive-dialog-{{ account.id }}" class="task-dialog confirm-dialog-small">
+              <form method="post">
+                <div class="dialog-head">
+                  <strong>Inaktiv setzen: {{ account['username'] }}</strong>
+                  <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
+                </div>
+                <input type="hidden" name="action" value="toggle-inactive">
+                <input type="hidden" name="user_id" value="{{ account['id'] }}">
+                <p class="muted" style="margin: 10px 0 6px; font-size: 0.85rem;">Dauer der Inaktivität</p>
+                <div class="radio-group" style="margin-bottom: 10px;">
+                  <label class="checkbox-label"><input type="radio" name="inactive_duration_type" value="unlimited" checked onchange="document.getElementById('inactive-until-wrap-{{ account.id }}').style.display='none'"> Unbegrenzt</label>
+                  <label class="checkbox-label"><input type="radio" name="inactive_duration_type" value="until" onchange="document.getElementById('inactive-until-wrap-{{ account.id }}').style.display='block'"> Bis Datum/Uhrzeit</label>
+                </div>
+                <div id="inactive-until-wrap-{{ account.id }}" style="display:none; margin-bottom:10px;">
+                  <p class="muted" style="font-size:0.82rem; margin:0 0 6px;">Aktiv ab wieder:</p>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <label style="font-size:0.85rem;">Datum <span class="req-mark">*</span>
+                      <input type="date" name="inactive_until_date" style="margin-top:4px;">
+                    </label>
+                    <label style="font-size:0.85rem;">Uhrzeit <small class="muted">(optional, sonst 00:00)</small>
+                      <input type="time" name="inactive_until_time" placeholder="00:00" style="margin-top:4px;">
+                    </label>
+                  </div>
+                </div>
+                <div class="compact-actions">
+                  <button type="submit">Inaktiv setzen</button>
+                  <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
+                </div>
+              </form>
+            </dialog>
+            {% endif %}
           </td>
           <td>
             <button
@@ -141,9 +177,20 @@
                   </div>
                 </div>
                 <label class="checkbox-label">
-                  <input type="checkbox" name="is_inactive" value="1" {{ 'checked' if account['is_inactive'] else '' }}>
+                  <input type="checkbox" name="is_inactive" value="1" {{ 'checked' if account['is_inactive'] else '' }} id="edit-inactive-cb-{{ account.id }}" onchange="document.getElementById('edit-inactive-until-wrap-{{ account.id }}').style.display = this.checked ? 'block' : 'none'">
                   Inaktiv <small class="muted">(z. B. Urlaub / längere Abwesenheit)</small>
                 </label>
+                <div id="edit-inactive-until-wrap-{{ account.id }}" style="{{ '' if account['is_inactive'] else 'display:none;' }}">
+                  <p class="muted" style="font-size:0.82rem; margin:4px 0 6px;">Aktiv ab wieder <small>(leer = unbegrenzt)</small></p>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <label style="font-size:0.85rem;">Datum
+                      <input type="date" name="inactive_until_date" value="{{ account['inactive_until'][:10] if account['inactive_until'] else '' }}" style="margin-top:4px;">
+                    </label>
+                    <label style="font-size:0.85rem;">Uhrzeit <small class="muted">(optional, sonst 00:00)</small>
+                      <input type="time" name="inactive_until_time" value="{{ account['inactive_until'][11:16] if account['inactive_until'] and account['inactive_until'][11:16] != '00:00' else '' }}" placeholder="00:00" style="margin-top:4px;">
+                    </label>
+                  </div>
+                </div>
                 <label class="checkbox-label">
                   <input type="checkbox" name="is_dashboard_invisible" value="1" {{ 'checked' if account['is_dashboard_invisible'] else '' }}>
                   Im Dashboard ausblenden
@@ -249,6 +296,34 @@
                 </label>
                 <label>Farbe
                   <input type="color" name="role_color" value="{{ user_color }}" required>
+                </label>
+                <div class="actions-row">
+                  <button type="submit">Speichern</button>
+                </div>
+              </form>
+            </dialog>
+          </td>
+          <td></td>
+        </tr>
+        <tr>
+          <td>{{ viewer_label }}</td>
+          <td><span class="initial-badge badge-viewer">ANS</span></td>
+          <td><small class="muted">Nein (Systemrolle – nur Lesezugriff)</small></td>
+          <td>
+            <button type="button" onclick="document.getElementById('edit-role-dialog-viewer').showModal()">Bearbeiten</button>
+            <dialog id="edit-role-dialog-viewer" class="task-dialog">
+              <form method="post" class="form-grid two-columns task-edit-form">
+                <div class="dialog-head full">
+                  <h2>Rolle bearbeiten: {{ viewer_label }}</h2>
+                  <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
+                </div>
+                <input type="hidden" name="action" value="update-role">
+                <input type="hidden" name="role_key" value="viewer">
+                <label>Name
+                  <input type="text" name="role_label" value="{{ viewer_label }}" required>
+                </label>
+                <label>Farbe
+                  <input type="color" name="role_color" value="{{ viewer_color }}" required>
                 </label>
                 <div class="actions-row">
                   <button type="submit">Speichern</button>

@@ -353,6 +353,10 @@ body[data-theme="dark"] .user-task-score {
   background: var(--role-admin-color, #facc15);
 }
 
+.badge-viewer {
+  background: var(--role-viewer-color, #94a3b8);
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--line);
@@ -1278,7 +1282,8 @@ body[data-theme="dark"] .comment-card {
 }
 
 .initial-badge.badge-inactive {
-  filter: grayscale(0.75) brightness(1.08);
+  filter: grayscale(1);
+  opacity: 0.5;
 }
 
 .initial-badge.badge-anon {
@@ -1292,7 +1297,8 @@ body[data-theme="dark"] .comment-card {
   margin: 8px 0;
 }
 
-.sidebar-member-inactive {
+.sidebar-member-inactive .user-task-score,
+.sidebar-member-inactive .muted {
   opacity: 0.5;
 }
 
