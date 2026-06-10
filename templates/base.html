@@ -68,7 +68,7 @@
           {% block nav_links %}
           <a href="{{ url_for('dashboard') }}">Dashboard</a>
           <a href="{{ url_for('overview') }}">Übersicht</a>
-          {% if app_settings['calendar_disabled'] != '1' %}
+          {% if app_settings['calendar_disabled'] != '1' and user['role'] != 'viewer' %}
           <a href="{{ url_for('calendar_page') }}">Kalender</a>
           {% endif %}
           {% if user['is_admin'] %}

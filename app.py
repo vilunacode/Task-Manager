@@ -2483,6 +2483,7 @@ def dashboard_tasks_api():
 
 @app.route("/calendar", methods=["GET", "POST"])
 @login_required
+@not_viewer
 def calendar_page():
     user = current_user()
     if app_settings().get("calendar_disabled") == "1":
