@@ -3,6 +3,8 @@
 
 $ErrorActionPreference = "Stop"
 
+try {
+
 $ProjectRoot = Split-Path $PSScriptRoot
 Set-Location $ProjectRoot
 
@@ -154,5 +156,13 @@ ie4uinit.exe -show 2>$null
 $ErrorActionPreference = "Stop"
 Write-Host "   Fertig. Falls das Icon im Explorer noch falsch angezeigt wird, bitte den Explorer neu starten." -ForegroundColor DarkGray
 
-Write-Host ""
-Read-Host "Druecke Enter zum Beenden"
+} catch {
+    Write-Host ""
+    Write-Host "============================================" -ForegroundColor Red
+    Write-Host "  UNERWARTETER FEHLER:" -ForegroundColor Red
+    Write-Host "  $_" -ForegroundColor Red
+    Write-Host "============================================" -ForegroundColor Red
+    Write-Host ""
+    Read-Host "Druecke Enter zum Beenden"
+    exit 1
+}
