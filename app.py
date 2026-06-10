@@ -480,6 +480,28 @@ def init_db() -> None:
             UNIQUE(floor_id, name)
         );
 
+        CREATE TABLE IF NOT EXISTS location_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS template_floors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_id INTEGER NOT NULL REFERENCES location_templates(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(template_id, name)
+        );
+
+        CREATE TABLE IF NOT EXISTS template_rooms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            floor_id INTEGER NOT NULL REFERENCES template_floors(id) ON DELETE CASCADE,
+            name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(floor_id, name)
+        );
+
         CREATE TABLE IF NOT EXISTS activity_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             actor_id INTEGER,
@@ -715,36 +737,64 @@ def init_db() -> None:
         """
     )
 
-    _room_seeds = [
-        ("BE", ["BEG41", "BEG45", "BEG47", "BE01", "BE02", "BE03", "BE04", "BE05", "BE06"]),
-        ("BO", [
-            "BO02", "BO03", "BO07", "BO10", "BO11", "BO12", "BO13", "BO14", "BO15", "BO16",
-            "BO17", "BO18", "BO19", "BO22", "BO23", "BO24", "BO25", "BO28", "BO30", "BO31",
-            "BO32", "BO33", "BO35", "BO36", "BO37", "BO39", "BO40", "BO41", "BO42", "BO43",
-            "BO45", "BO46", "BO47", "BO48", "BO50", "BO51", "BO52", "BO53", "BO54", "BO55",
-            "BO56", "BO58", "BO60", "BO61", "BO62", "BO63", "BO64", "BO65", "BO66",
-        ]),
-        ("EE", ["EE03", "EE04", "EE07", "EE08", "EE09", "EE10", "EE11", "EE13", "EE15"]),
-        ("EO", ["EO01", "EO02", "EO05", "Kantine"]),
-        ("EU", [
-            "EU01", "EU03", "EU04", "EU05", "EU06", "EU07", "EU08", "EU09", "EU10",
-            "EU11", "EU13", "EU14", "EU18", "EU19", "EU20", "EU22",
-        ]),
+    _LOCATION_TEMPLATES = [
+        {
+            "name": "Oberhausen",
+            "floors": [
+                {"name": "BE", "rooms": ["BEG045", "BEG41", "BEG47", "BE01", "BE06", "BE07", "BE02", "BE03", "BE04", "BE05"]},
+                {"name": "BO", "rooms": [
+                    "BO02", "BO03", "BO07", "BO10", "BO11", "BO12", "BO13", "BO14", "BO15", "BO16",
+                    "BO17", "BO18", "BO19", "BO22", "BO23", "BO24", "BO25", "BO28", "BO30", "BO31",
+                    "BO32", "BO33", "BO35", "BO36", "BO37", "BO39", "BO40", "BO41", "BO42", "BO43",
+                    "BO45", "BO46", "BO47", "BO48", "BO50", "BO51", "BO52", "BO53", "BO54", "BO55",
+                    "BO56", "BO58", "BO60", "BO61", "BO62", "BO63", "BO64", "BO65", "BO66",
+                ]},
+                {"name": "EE", "rooms": ["EE03", "EE04", "EE07", "EE08", "EE09", "EE10", "EE11", "EE13", "EE15"]},
+                {"name": "EO", "rooms": ["EO01", "EO02", "EO05", "Kantine"]},
+                {"name": "EU", "rooms": [
+                    "EU01", "EU03", "EU04", "EU05", "EU06", "EU07", "EU08", "EU09", "EU10",
+                    "EU11", "EU13", "EU14", "EU18", "EU19", "EU20", "EU22",
+                ]},
+            ],
+        },
+        {
+            "name": "Düsseldorf",
+            "floors": [
+                {"name": "3. OG", "rooms": [
+                    "3.103", "3.104", "3.105", "3.102", "3.106", "3.107", "3.108", "3.118",
+                    "3.205", "3.113", "3.305", "3.304", "3.303", "3.302", "3.402", "3.206",
+                    "3.403", "3.306", "3.307", "3.309", "3.404", "3.405", "3.406",
+                ]},
+                {"name": "5. OG", "rooms": [
+                    "5.207", "5.206", "5.205", "5.203", "5.202", "5.201", "5.108", "5.113",
+                    "5.101", "5.102", "5.103", "5.104", "5.106", "5.107",
+                ]},
+            ],
+        },
     ]
     _seed_ts = now_iso()
-    for _floor_name, _rooms in _room_seeds:
+    for _tpl in _LOCATION_TEMPLATES:
         db.execute(
-            "INSERT OR IGNORE INTO room_floors (name, created_at) VALUES (?, ?)",
-            (_floor_name, _seed_ts),
+            "INSERT OR IGNORE INTO location_templates (name, created_at) VALUES (?, ?)",
+            (_tpl["name"], _seed_ts),
         )
-        _floor_row = db.execute(
-            "SELECT id FROM room_floors WHERE name = ?", (_floor_name,)
+        _tpl_row = db.execute(
+            "SELECT id FROM location_templates WHERE name = ?", (_tpl["name"],)
         ).fetchone()
-        for _room_name in _rooms:
+        for _floor in _tpl["floors"]:
             db.execute(
-                "INSERT OR IGNORE INTO room_entries (floor_id, name, created_at) VALUES (?, ?, ?)",
-                (_floor_row["id"], _room_name, _seed_ts),
+                "INSERT OR IGNORE INTO template_floors (template_id, name, created_at) VALUES (?, ?, ?)",
+                (_tpl_row["id"], _floor["name"], _seed_ts),
             )
+            _tpl_floor_row = db.execute(
+                "SELECT id FROM template_floors WHERE template_id = ? AND name = ?",
+                (_tpl_row["id"], _floor["name"]),
+            ).fetchone()
+            for _room_name in _floor["rooms"]:
+                db.execute(
+                    "INSERT OR IGNORE INTO template_rooms (floor_id, name, created_at) VALUES (?, ?, ?)",
+                    (_tpl_floor_row["id"], _room_name, _seed_ts),
+                )
 
     db.commit()
 
@@ -1137,6 +1187,29 @@ def get_all_rooms_by_location() -> list[dict]:
             })
         g.rooms_by_location = result
     return g.rooms_by_location
+
+
+def get_all_templates() -> list[dict]:
+    templates = query_all("SELECT id, name FROM location_templates ORDER BY name ASC")
+    result = []
+    for tpl in templates:
+        floors = query_all(
+            "SELECT id, name FROM template_floors WHERE template_id = ? ORDER BY name ASC",
+            (tpl["id"],),
+        )
+        floors_list = []
+        for floor in floors:
+            rooms = query_all(
+                "SELECT id, name FROM template_rooms WHERE floor_id = ? ORDER BY name ASC",
+                (floor["id"],),
+            )
+            floors_list.append({
+                "id": floor["id"],
+                "name": floor["name"],
+                "rooms": [{"id": r["id"], "name": r["name"]} for r in rooms],
+            })
+        result.append({"id": tpl["id"], "name": tpl["name"], "floors": floors_list})
+    return result
 
 
 def normalize_ticket_category(value: str) -> str:
@@ -2847,6 +2920,191 @@ def settings_page():
                 flash("Favicon wurde entfernt.", "success")
             return redirect(url_for("settings_page"))
 
+        if action == "create-template":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Templates erstellen.", "error")
+                return redirect(url_for("settings_page"))
+            tpl_name = request.form.get("template_name", "").strip()
+            if not tpl_name:
+                flash("Bitte einen Templatenamen angeben.", "error")
+                return redirect(url_for("settings_page"))
+            if len(tpl_name) > 60:
+                flash("Templatename darf maximal 60 Zeichen lang sein.", "error")
+                return redirect(url_for("settings_page"))
+            existing = query_one("SELECT id FROM location_templates WHERE lower(name) = lower(?)", (tpl_name,))
+            if existing:
+                flash("Ein Template mit diesem Namen existiert bereits.", "error")
+                return redirect(url_for("settings_page"))
+            execute("INSERT INTO location_templates (name, created_at) VALUES (?, ?)", (tpl_name, now_iso()))
+            flash(f'Template "{tpl_name}" wurde erstellt.', "success")
+            return redirect(url_for("settings_page"))
+
+        if action == "delete-template":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Templates löschen.", "error")
+                return redirect(url_for("settings_page"))
+            tpl_id = parse_int_value(request.form.get("template_id"))
+            if tpl_id is None:
+                flash("Ungültiges Template.", "error")
+                return redirect(url_for("settings_page"))
+            tpl = query_one("SELECT id, name FROM location_templates WHERE id = ?", (tpl_id,))
+            if tpl is None:
+                flash("Template nicht gefunden.", "error")
+                return redirect(url_for("settings_page"))
+            execute("DELETE FROM location_templates WHERE id = ?", (tpl_id,))
+            flash(f'Template "{tpl["name"]}" wurde gelöscht.', "success")
+            return redirect(url_for("settings_page"))
+
+        if action == "create-template-floor":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Template-Ebenen erstellen.", "error")
+                return redirect(url_for("settings_page"))
+            tpl_id = parse_int_value(request.form.get("template_id"))
+            floor_name = request.form.get("floor_name", "").strip()
+            if tpl_id is None or not floor_name:
+                flash("Bitte Template und Ebenenname angeben.", "error")
+                return redirect(url_for("settings_page"))
+            if len(floor_name) > 40:
+                flash("Ebenenname darf maximal 40 Zeichen lang sein.", "error")
+                return redirect(url_for("settings_page"))
+            tpl = query_one("SELECT id FROM location_templates WHERE id = ?", (tpl_id,))
+            if tpl is None:
+                flash("Template nicht gefunden.", "error")
+                return redirect(url_for("settings_page"))
+            existing = query_one(
+                "SELECT id FROM template_floors WHERE template_id = ? AND lower(name) = lower(?)",
+                (tpl_id, floor_name),
+            )
+            if existing:
+                flash("Eine Ebene mit diesem Namen existiert in diesem Template bereits.", "error")
+                return redirect(url_for("settings_page"))
+            execute(
+                "INSERT INTO template_floors (template_id, name, created_at) VALUES (?, ?, ?)",
+                (tpl_id, floor_name, now_iso()),
+            )
+            flash(f'Ebene "{floor_name}" wurde zum Template hinzugefügt.', "success")
+            return redirect(url_for("settings_page", open_template=tpl_id))
+
+        if action == "delete-template-floor":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Template-Ebenen löschen.", "error")
+                return redirect(url_for("settings_page"))
+            tpl_floor_id = parse_int_value(request.form.get("template_floor_id"))
+            if tpl_floor_id is None:
+                flash("Ungültige Ebene.", "error")
+                return redirect(url_for("settings_page"))
+            tpl_floor = query_one(
+                "SELECT id, name, template_id FROM template_floors WHERE id = ?", (tpl_floor_id,)
+            )
+            if tpl_floor is None:
+                flash("Ebene nicht gefunden.", "error")
+                return redirect(url_for("settings_page"))
+            execute("DELETE FROM template_floors WHERE id = ?", (tpl_floor_id,))
+            flash(f'Ebene "{tpl_floor["name"]}" wurde aus dem Template entfernt.', "success")
+            return redirect(url_for("settings_page", open_template=tpl_floor["template_id"]))
+
+        if action == "create-template-room":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Template-Räume erstellen.", "error")
+                return redirect(url_for("settings_page"))
+            tpl_floor_id = parse_int_value(request.form.get("template_floor_id"))
+            room_name = request.form.get("room_name", "").strip()
+            if tpl_floor_id is None or not room_name:
+                flash("Bitte Ebene und Raumname angeben.", "error")
+                return redirect(url_for("settings_page"))
+            if len(room_name) > 60:
+                flash("Raumname darf maximal 60 Zeichen lang sein.", "error")
+                return redirect(url_for("settings_page"))
+            tpl_floor = query_one(
+                "SELECT id, template_id FROM template_floors WHERE id = ?", (tpl_floor_id,)
+            )
+            if tpl_floor is None:
+                flash("Ebene nicht gefunden.", "error")
+                return redirect(url_for("settings_page"))
+            existing = query_one(
+                "SELECT id FROM template_rooms WHERE floor_id = ? AND lower(name) = lower(?)",
+                (tpl_floor_id, room_name),
+            )
+            if existing:
+                flash("Dieser Raum existiert in der Ebene bereits.", "error")
+                return redirect(url_for("settings_page"))
+            execute(
+                "INSERT INTO template_rooms (floor_id, name, created_at) VALUES (?, ?, ?)",
+                (tpl_floor_id, room_name, now_iso()),
+            )
+            flash(f'Raum "{room_name}" wurde zum Template hinzugefügt.', "success")
+            return redirect(url_for("settings_page", open_template_floor=tpl_floor_id))
+
+        if action == "delete-template-room":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Template-Räume löschen.", "error")
+                return redirect(url_for("settings_page"))
+            tpl_room_id = parse_int_value(request.form.get("template_room_id"))
+            if tpl_room_id is None:
+                flash("Ungültiger Raum.", "error")
+                return redirect(url_for("settings_page"))
+            tpl_room = query_one(
+                "SELECT id, name, floor_id FROM template_rooms WHERE id = ?", (tpl_room_id,)
+            )
+            if tpl_room is None:
+                flash("Raum nicht gefunden.", "error")
+                return redirect(url_for("settings_page"))
+            execute("DELETE FROM template_rooms WHERE id = ?", (tpl_room_id,))
+            flash(f'Raum "{tpl_room["name"]}" wurde aus dem Template entfernt.', "success")
+            return redirect(url_for("settings_page", open_template_floor=tpl_room["floor_id"]))
+
+        if action == "apply-template":
+            if not user["is_admin"]:
+                flash("Nur Administratoren dürfen Templates anwenden.", "error")
+                return redirect(url_for("settings_page"))
+            tpl_id = parse_int_value(request.form.get("template_id"))
+            if tpl_id is None:
+                flash("Ungültiges Template.", "error")
+                return redirect(url_for("settings_page"))
+            tpl = query_one("SELECT id, name FROM location_templates WHERE id = ?", (tpl_id,))
+            if tpl is None:
+                flash("Template nicht gefunden.", "error")
+                return redirect(url_for("settings_page"))
+            location_name = request.form.get("location_name", tpl["name"]).strip()
+            if not location_name:
+                location_name = tpl["name"]
+            existing_loc = query_one(
+                "SELECT id FROM room_locations WHERE lower(name) = lower(?)", (location_name,)
+            )
+            if existing_loc:
+                flash(f'Ein Standort mit dem Namen "{location_name}" existiert bereits.', "error")
+                return redirect(url_for("settings_page"))
+            execute(
+                "INSERT INTO room_locations (name, created_at) VALUES (?, ?)",
+                (location_name, now_iso()),
+            )
+            new_loc = query_one("SELECT id FROM room_locations WHERE lower(name) = lower(?)", (location_name,))
+            tpl_floors = query_all(
+                "SELECT id, name FROM template_floors WHERE template_id = ? ORDER BY name ASC",
+                (tpl_id,),
+            )
+            for tpl_floor in tpl_floors:
+                execute(
+                    "INSERT INTO room_floors (location_id, name, created_at) VALUES (?, ?, ?)",
+                    (new_loc["id"], tpl_floor["name"], now_iso()),
+                )
+                new_floor = query_one(
+                    "SELECT id FROM room_floors WHERE location_id = ? AND name = ?",
+                    (new_loc["id"], tpl_floor["name"]),
+                )
+                tpl_rooms = query_all(
+                    "SELECT name FROM template_rooms WHERE floor_id = ? ORDER BY name ASC",
+                    (tpl_floor["id"],),
+                )
+                for tpl_room in tpl_rooms:
+                    execute(
+                        "INSERT OR IGNORE INTO room_entries (floor_id, name, created_at) VALUES (?, ?, ?)",
+                        (new_floor["id"], tpl_room["name"], now_iso()),
+                    )
+            g.pop("rooms_by_location", None)
+            flash(f'Standort "{location_name}" wurde aus dem Template "{tpl["name"]}" erstellt.', "success")
+            return redirect(url_for("settings_page"))
+
         if action == "create-location":
             if not user["is_admin"]:
                 flash("Nur Administratoren dürfen Standorte erstellen.", "error")
@@ -2996,6 +3254,7 @@ def settings_page():
         ticket_categories=get_ticket_categories(),
         tone_options=sorted(TONE_OPTIONS.keys()),
         log_retention_units=LOG_RETENTION_UNITS,
+        templates_data=get_all_templates(),
         show_sidebar=False,
     )
 

@@ -132,6 +132,95 @@
 </section>
 
 <section class="card">
+  <h2>Standort-Templates</h2>
+  <p class="muted" style="margin-bottom:16px;">Templates definieren Ebenen und Räume für einen Standort. Per Knopfdruck wird daraus ein vollständiger Standort im Raumplan angelegt.</p>
+
+  {% if user['is_admin'] %}
+  <div style="max-width:900px;">
+  {% if templates_data %}
+    {% for tpl in templates_data %}
+    <details style="border:2px solid var(--line); border-radius:12px; margin-bottom:12px;" {% if request.args.get('open_template')|int == tpl.id %}open{% endif %}>
+      <summary style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px; cursor:pointer; list-style:none; user-select:none;">
+        <span style="display:flex; align-items:center; gap:8px;">
+          <span class="floor-arrow">▶</span>
+          <strong>{{ tpl.name }}</strong>
+          <span class="muted" style="font-size:0.82rem;">({{ tpl.floors | length }} Ebene(n))</span>
+        </span>
+        <span style="display:flex; gap:8px; align-items:center;">
+          <button type="button" class="secondary small-btn" title="Als Standort anlegen" onclick="event.preventDefault(); openApplyTemplateConfirm({{ tpl.id }}, '{{ tpl.name | e }}')">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            Standort anlegen
+          </button>
+          <button type="button" class="danger small-btn" title="Template löschen" onclick="event.preventDefault(); openDeleteTemplateConfirm({{ tpl.id }}, '{{ tpl.name | e }}')"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
+        </span>
+      </summary>
+
+      <div style="padding:0 14px 14px;">
+        <form method="post" class="form-grid two-columns" style="margin:10px 0 12px;">
+          <input type="hidden" name="action" value="create-template-floor">
+          <input type="hidden" name="template_id" value="{{ tpl.id }}">
+          <label style="font-size:0.85rem; font-weight:500;">Neue Ebene hinzufügen
+            <input type="text" name="floor_name" placeholder="z. B. EG" maxlength="40" required>
+          </label>
+          <div class="actions-row">
+            <button type="submit" class="secondary small-btn">Ebene hinzufügen</button>
+          </div>
+        </form>
+
+        {% if tpl.floors %}
+          {% for floor in tpl.floors %}
+          <details style="border:1px solid var(--line); border-radius:10px; margin-bottom:8px;" {% if request.args.get('open_template_floor')|int == floor.id %}open{% endif %}>
+            <summary style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; cursor:pointer; list-style:none; user-select:none;">
+              <span style="display:flex; align-items:center; gap:8px;">
+                <span class="floor-arrow">▶</span>
+                <strong>{{ floor.name }}</strong>
+                <span class="muted" style="font-size:0.82rem;">({{ floor.rooms | length }} Räume)</span>
+              </span>
+              <button type="button" class="danger small-btn" title="Ebene entfernen" onclick="event.preventDefault(); openDeleteTemplateFloorConfirm({{ floor.id }}, '{{ floor.name | e }}')"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
+            </summary>
+            <div style="padding:0 12px 12px;">
+              <form method="post" class="form-grid two-columns" style="margin:8px 0 10px;">
+                <input type="hidden" name="action" value="create-template-room">
+                <input type="hidden" name="template_floor_id" value="{{ floor.id }}">
+                <label style="font-size:0.85rem; font-weight:500;">Raum hinzufügen
+                  <input type="text" name="room_name" placeholder="z. B. BE01" maxlength="60" required>
+                </label>
+                <div class="actions-row">
+                  <button type="submit" class="secondary small-btn">Raum hinzufügen</button>
+                </div>
+              </form>
+              {% if floor.rooms %}
+              <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                {% for room in floor.rooms %}
+                <form method="post" class="inline-form">
+                  <input type="hidden" name="action" value="delete-template-room">
+                  <input type="hidden" name="template_room_id" value="{{ room.id }}">
+                  <button type="submit" class="secondary small-btn" title="Raum entfernen" style="display:inline-flex;gap:6px;align-items:center;">
+                    {{ room.name }} <span style="opacity:0.5;font-size:0.8rem;">✕</span>
+                  </button>
+                </form>
+                {% endfor %}
+              </div>
+              {% else %}
+              <p class="muted" style="font-size:0.85rem; margin:0;">Noch keine Räume in dieser Ebene.</p>
+              {% endif %}
+            </div>
+          </details>
+          {% endfor %}
+        {% else %}
+        <p class="muted" style="font-size:0.85rem; margin:4px 0 0;">Noch keine Ebenen in diesem Template.</p>
+        {% endif %}
+      </div>
+    </details>
+    {% endfor %}
+  {% else %}
+  <p class="muted">Noch keine Templates vorhanden.</p>
+  {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
   <h2>Raumplan</h2>
   <p class="muted" style="margin-bottom:16px;">Standorte, Ebenen und Räume verwalten — diese stehen beim Erstellen einer Task als Auswahl zur Verfügung.</p>
 
@@ -223,6 +312,57 @@
 </section>
 {% endif %}
 
+<dialog id="apply-template-dialog" class="task-dialog confirm-dialog-small">
+  <form method="post" id="apply-template-form">
+    <div class="dialog-head">
+      <strong>Standort aus Template erstellen?</strong>
+      <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
+    </div>
+    <p class="muted" style="margin:10px 0 12px; line-height:1.5;">Alle Ebenen und Räume des Templates werden in einen neuen Standort übertragen.</p>
+    <label style="font-size:0.85rem; font-weight:500; display:block; margin-bottom:14px;">Name des neuen Standorts
+      <input type="text" name="location_name" id="apply-template-location-name" maxlength="60" required style="margin-top:4px; width:100%; box-sizing:border-box;">
+    </label>
+    <input type="hidden" name="action" value="apply-template">
+    <input type="hidden" name="template_id" id="apply-template-id" value="">
+    <div class="compact-actions">
+      <button type="submit" class="secondary">Standort anlegen</button>
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="delete-template-dialog" class="task-dialog confirm-dialog-small">
+  <form method="post" id="delete-template-form">
+    <div class="dialog-head">
+      <strong>Template löschen?</strong>
+      <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
+    </div>
+    <p class="muted" style="margin:10px 0 18px; line-height:1.5;">Das Template und alle zugehörigen Ebenen und Räume werden entfernt. Bereits angelegte Standorte bleiben unverändert.</p>
+    <input type="hidden" name="action" value="delete-template">
+    <input type="hidden" name="template_id" id="delete-template-id" value="">
+    <div class="compact-actions">
+      <button type="submit" class="danger" title="Ja, löschen"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="delete-template-floor-dialog" class="task-dialog confirm-dialog-small">
+  <form method="post" id="delete-template-floor-form">
+    <div class="dialog-head">
+      <strong>Template-Ebene löschen?</strong>
+      <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
+    </div>
+    <p class="muted" style="margin:10px 0 18px; line-height:1.5;">Die Ebene und alle zugehörigen Räume werden aus dem Template entfernt.</p>
+    <input type="hidden" name="action" value="delete-template-floor">
+    <input type="hidden" name="template_floor_id" id="delete-template-floor-id" value="">
+    <div class="compact-actions">
+      <button type="submit" class="danger" title="Ja, löschen"><svg width="15" height="15" aria-hidden="true"><use href="#icon-trash"/></svg></button>
+      <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="delete-location-dialog" class="task-dialog confirm-dialog-small">
   <form method="post" id="delete-location-form">
     <div class="dialog-head">
@@ -281,6 +421,19 @@ function openDeleteLocationConfirm(locationId, locationName) {
 function openDeleteFloorConfirm(floorId, floorName) {
   document.getElementById('delete-floor-id').value = floorId;
   document.getElementById('delete-floor-dialog').showModal();
+}
+function openApplyTemplateConfirm(templateId, templateName) {
+  document.getElementById('apply-template-id').value = templateId;
+  document.getElementById('apply-template-location-name').value = templateName;
+  document.getElementById('apply-template-dialog').showModal();
+}
+function openDeleteTemplateConfirm(templateId, templateName) {
+  document.getElementById('delete-template-id').value = templateId;
+  document.getElementById('delete-template-dialog').showModal();
+}
+function openDeleteTemplateFloorConfirm(floorId, floorName) {
+  document.getElementById('delete-template-floor-id').value = floorId;
+  document.getElementById('delete-template-floor-dialog').showModal();
 }
 </script>
 {% endblock %}
