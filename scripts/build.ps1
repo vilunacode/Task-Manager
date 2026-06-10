@@ -50,12 +50,13 @@ $PythonCmd = $null
 foreach ($candidate in @("py", "python3", "python")) {
     $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
     if (-not $cmd) { continue }
-    # Windows-Store-Alias erkennen: liegt in WindowsApps und gibt keinen sinnvollen Output
-    $testOut = & $candidate --version 2>&1
-    if ($testOut -match "Python \d+\.\d+") {
-        $PythonCmd = $candidate
-        break
-    }
+    try {
+        $testOut = & $candidate --version 2>&1
+        if ($testOut -match "Python \d+\.\d+") {
+            $PythonCmd = $candidate
+            break
+        }
+    } catch { }
 }
 if (-not $PythonCmd) {
     Write-Host ""
