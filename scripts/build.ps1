@@ -46,20 +46,36 @@ $SpecFile  = "$AppName.spec"
 
 # ── Python pruefen ────────────────────────────────────────
 Write-Host ">> Python pruefen..." -ForegroundColor Yellow
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    Write-Host "   FEHLER: Python nicht gefunden. Bitte Python installieren und PATH pruefen." -ForegroundColor Red
+$PythonCmd = $null
+foreach ($candidate in @("py", "python3", "python")) {
+    $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
+    if (-not $cmd) { continue }
+    # Windows-Store-Alias erkennen: liegt in WindowsApps und gibt keinen sinnvollen Output
+    $testOut = & $candidate --version 2>&1
+    if ($testOut -match "Python \d+\.\d+") {
+        $PythonCmd = $candidate
+        break
+    }
+}
+if (-not $PythonCmd) {
+    Write-Host ""
+    Write-Host "   FEHLER: Kein Python gefunden." -ForegroundColor Red
+    Write-Host "   Bitte Python von https://www.python.org/downloads/ installieren" -ForegroundColor Red
+    Write-Host "   und sicherstellen, dass 'Add Python to PATH' beim Setup aktiviert war." -ForegroundColor Red
+    Write-Host "   Tipp: Den Microsoft-Store-Alias unter Einstellungen > Apps >" -ForegroundColor DarkGray
+    Write-Host "         Erweiterte App-Einstellungen > App-Ausfuehrungsaliase deaktivieren." -ForegroundColor DarkGray
     Read-Host "Druecke Enter zum Beenden"
     exit 1
 }
-$pythonVersion = python --version 2>&1
-Write-Host "   $pythonVersion gefunden." -ForegroundColor Green
+$pythonVersion = & $PythonCmd --version 2>&1
+Write-Host "   $pythonVersion gefunden (Befehl: $PythonCmd)." -ForegroundColor Green
 
 # ── Abhaengigkeiten installieren ──────────────────────────
 Write-Host ""
 Write-Host ">> Abhaengigkeiten installieren..." -ForegroundColor Yellow
 $ErrorActionPreference = "Continue"
-python -m pip install -r requirements.txt --quiet
-python -m pip install pyinstaller tzdata pystray Pillow --quiet
+& $PythonCmd -m pip install -r requirements.txt --quiet
+& $PythonCmd -m pip install pyinstaller tzdata pystray Pillow --quiet
 $ErrorActionPreference = "Stop"
 Write-Host "   Fertig." -ForegroundColor Green
 
@@ -110,7 +126,7 @@ Write-Host ""
 Write-Host ">> EXE wird erstellt (kann einige Minuten dauern)..." -ForegroundColor Yellow
 Write-Host ""
 
-python -m PyInstaller app.py `
+& $PythonCmd -m PyInstaller app.py `
     --onefile `
     --name $AppName `
     --add-data "templates;templates" `
