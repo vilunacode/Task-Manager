@@ -1024,6 +1024,19 @@ def normalize_initials(value: str) -> str:
     return initials
 
 
+def suggest_initials(taken: str) -> str:
+    prefix = taken[:2]
+    for i in range(1, 10):
+        candidate = f"{prefix}{i}"
+        if not query_one("SELECT id FROM users WHERE initials = ?", (candidate,)):
+            return candidate
+    for i in range(1, 10):
+        candidate = f"{taken[0]}{i}{taken[2]}"
+        if not query_one("SELECT id FROM users WHERE initials = ?", (candidate,)):
+            return candidate
+    return ""
+
+
 def custom_roles():
     return query_all(
         """
@@ -3857,6 +3870,45 @@ def edit_task(task_id: int):
 @app.route("/admin/users", methods=["GET", "POST"])
 @admin_required
 def manage_users():
+    def _render_page(**extra):
+        _users = query_all(
+            """
+            SELECT id, username, is_admin, initials, role, is_inactive, inactive_until,
+                   is_dashboard_invisible, member_type, first_name, notes, created_at
+            FROM users
+            ORDER BY is_inactive ASC,
+                     CASE member_type WHEN 'trainee' THEN 0 ELSE 1 END ASC,
+                     is_admin DESC, username ASC
+            """
+        )
+        _enriched = []
+        for row in _users:
+            item = dict(row)
+            item["role_label"] = role_label(row["role"], row["is_admin"])
+            item["color_class"] = badge_color_class(row["role"], row["is_admin"])
+            item["member_type"] = row["member_type"] or MEMBER_TYPE_REGULAR
+            item["is_dashboard_invisible"] = bool(row["is_dashboard_invisible"])
+            _enriched.append(item)
+        extra.setdefault("create_prefill", None)
+        extra.setdefault("initials_conflict", None)
+        extra.setdefault("initials_suggestion", None)
+        _settings = app_settings()
+        return render_template(
+            "admin_users.html",
+            users=_enriched,
+            user=current_user(),
+            role_options=role_options(),
+            role_management_entries=role_management_entries(),
+            admin_color=_settings.get("role_color_admin", "#facc15"),
+            admin_label=_settings.get("role_label_admin", "Admin"),
+            user_color=_settings.get("role_color_user", "#64748b"),
+            user_label=_settings.get("role_label_user", "Benutzer"),
+            viewer_color=_settings.get("role_color_viewer", "#94a3b8"),
+            viewer_label=_settings.get("role_label_viewer", "Nur Ansicht"),
+            show_sidebar=False,
+            **extra,
+        )
+
     if request.method == "POST":
         action = request.form.get("action", "")
         current = current_user()
@@ -3875,34 +3927,61 @@ def manage_users():
             first_name = request.form.get("first_name", "").strip()
             notes = request.form.get("notes", "").strip()
 
+            def _prefill():
+                return {
+                    "first_name": first_name,
+                    "username": username,
+                    "initials": request.form.get("initials", "").strip(),
+                    "role": role_value_create,
+                    "member_type": member_type,
+                    "is_dashboard_invisible": is_dashboard_invisible,
+                    "notes": notes,
+                    "password": password,
+                    "password_confirm": password_confirm,
+                }
+
             if not username or not password:
                 flash("Benutzername und Passwort sind erforderlich.", "error")
-                return redirect(url_for("manage_users"))
+                return _render_page(create_prefill=_prefill())
 
             if len(username) > MAX_USERNAME_LENGTH:
                 flash(f"Benutzername darf maximal {MAX_USERNAME_LENGTH} Zeichen lang sein.", "error")
-                return redirect(url_for("manage_users"))
+                return _render_page(create_prefill=_prefill())
 
             if password != password_confirm:
-                flash("Passwort und Passwort-Bestätigung stimmen nicht überein.", "error")
-                return redirect(url_for("manage_users"))
+                flash("Das Passwort stimmt nicht überein.", "error")
+                return _render_page(create_prefill=_prefill())
 
             if not initials:
                 initials = make_initials_from_username(username)
 
             if not role_value_create or (not is_admin and not role):
                 flash("Bitte eine gültige Rolle auswählen.", "error")
-                return redirect(url_for("manage_users"))
+                return _render_page(create_prefill=_prefill())
 
-            exists = query_one("SELECT id FROM users WHERE username = ?", (username,))
+            exists = query_one("SELECT id FROM users WHERE lower(username) = lower(?)", (username,))
             if exists is not None:
                 flash("Benutzername ist bereits vergeben.", "error")
-                return redirect(url_for("manage_users"))
+                return _render_page(create_prefill=_prefill())
 
             exists_initials = query_one("SELECT id FROM users WHERE initials = ?", (initials,))
             if exists_initials is not None:
-                flash("Dieses Kürzel ist bereits vergeben.", "error")
-                return redirect(url_for("manage_users"))
+                suggestion = suggest_initials(initials)
+                return _render_page(
+                    create_prefill={
+                        "first_name": first_name,
+                        "username": username,
+                        "initials": initials,
+                        "role": role_value_create,
+                        "member_type": member_type,
+                        "is_dashboard_invisible": is_dashboard_invisible,
+                        "notes": notes,
+                        "password": password,
+                        "password_confirm": password_confirm,
+                    },
+                    initials_conflict=initials,
+                    initials_suggestion=suggestion,
+                )
 
             execute(
                 """
@@ -4239,54 +4318,7 @@ def manage_users():
         flash("Unbekannte Aktion.", "error")
         return redirect(url_for("manage_users"))
 
-    users = query_all(
-        """
-        SELECT
-            id,
-            username,
-            is_admin,
-            initials,
-            role,
-            is_inactive,
-            inactive_until,
-            is_dashboard_invisible,
-            member_type,
-            first_name,
-            notes,
-            created_at
-        FROM users
-        ORDER BY
-            is_inactive ASC,
-            CASE member_type WHEN 'trainee' THEN 0 ELSE 1 END ASC,
-            is_admin DESC,
-            username ASC
-        """
-    )
-
-    enriched_users = []
-    for row in users:
-        item = dict(row)
-        item["role_label"] = role_label(row["role"], row["is_admin"])
-        item["color_class"] = badge_color_class(row["role"], row["is_admin"])
-        item["member_type"] = row["member_type"] or MEMBER_TYPE_REGULAR
-        item["is_dashboard_invisible"] = bool(row["is_dashboard_invisible"])
-        enriched_users.append(item)
-
-    settings = app_settings()
-    return render_template(
-        "admin_users.html",
-        users=enriched_users,
-        user=current_user(),
-        role_options=role_options(),
-        role_management_entries=role_management_entries(),
-        admin_color=settings.get("role_color_admin", "#facc15"),
-        admin_label=settings.get("role_label_admin", "Admin"),
-        user_color=settings.get("role_color_user", "#64748b"),
-        user_label=settings.get("role_label_user", "Benutzer"),
-        viewer_color=settings.get("role_color_viewer", "#94a3b8"),
-        viewer_label=settings.get("role_label_viewer", "Nur Ansicht"),
-        show_sidebar=False,
-    )
+    return _render_page()
 
 
 @app.route("/admin/closed")

@@ -3,43 +3,66 @@
 {% block content %}
 <section class="card">
   <h1>Benutzerverwaltung</h1>
+  {% if initials_conflict %}
+  <div class="flash-messages" style="margin-bottom: 12px;">
+    <div class="flash error">
+      Kürzel „<strong>{{ initials_conflict }}</strong>" ist bereits vergeben.
+      {% if initials_suggestion %}
+        Vorschlag: <strong>{{ initials_suggestion }}</strong> — bitte unten übernehmen oder ein eigenes eingeben.
+      {% else %}
+        Bitte ein anderes Kürzel eingeben.
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
   <form method="post" class="form-grid two-columns">
     <input type="hidden" name="action" value="create">
     <label>Vorname
-      <input type="text" name="first_name" maxlength="50">
+      <input type="text" name="first_name" maxlength="50" value="{{ create_prefill.first_name if create_prefill else '' }}">
     </label>
     <label><span>Nachname <span class="req-mark">*</span> <small class="muted">(= Benutzername zum Anmelden)</small></span>
-      <input type="text" name="username" maxlength="25" required>
+      <input type="text" name="username" maxlength="25" required value="{{ create_prefill.username if create_prefill else '' }}">
     </label>
     <label><span>Kürzel <small class="muted">(3 Zeichen, optional)</small></span>
-      <input type="text" name="initials" minlength="3" maxlength="3">
+      <input type="text" name="initials" minlength="3" maxlength="3"
+        value="{{ initials_suggestion if initials_suggestion else (create_prefill.initials if create_prefill else '') }}"
+        {% if initials_conflict %}style="border-color: var(--danger, #ef4444); outline-color: var(--danger, #ef4444);"{% endif %}>
+      {% if initials_conflict and initials_suggestion %}
+      <small style="color: var(--danger, #ef4444);">Vorschlag <strong>{{ initials_suggestion }}</strong> ist bereits eingetragen — bitte bestätigen oder ändern.</small>
+      {% endif %}
     </label>
     <label><span>Rolle <span class="req-mark">*</span></span>
       <select name="role" required>
         {% for role_opt in role_options %}
-        <option value="{{ role_opt['value'] }}">{{ role_opt['label'] }}{% if role_opt.get('is_admin') %} (Admin){% endif %}</option>
+        <option value="{{ role_opt['value'] }}" {{ 'selected' if create_prefill and create_prefill.role == role_opt['value'] else '' }}>{{ role_opt['label'] }}{% if role_opt.get('is_admin') %} (Admin){% endif %}</option>
         {% endfor %}
       </select>
     </label>
     <label><span>Passwort <span class="req-mark">*</span></span>
-      <input type="password" name="password" required>
+      <input type="password" name="password" id="create-password" required>
     </label>
     <label><span>Passwort bestätigen <span class="req-mark">*</span></span>
-      <input type="password" name="password_confirm" required>
+      <input type="password" name="password_confirm" id="create-password-confirm" required>
     </label>
+    {% if create_prefill and create_prefill.password %}
+    <script>
+      document.getElementById('create-password').value = {{ create_prefill.password | tojson }};
+      document.getElementById('create-password-confirm').value = {{ create_prefill.password_confirm | tojson }};
+    </script>
+    {% endif %}
     <div class="full radio-group-label">
       <span class="field-label">Art des Mitarbeiters</span>
       <div class="radio-group">
-        <label class="checkbox-label"><input type="radio" name="member_type" value="regular" checked> Mitarbeiter</label>
-        <label class="checkbox-label"><input type="radio" name="member_type" value="trainee"> Trainingsmitarbeiter</label>
+        <label class="checkbox-label"><input type="radio" name="member_type" value="regular" {{ 'checked' if not create_prefill or create_prefill.member_type != 'trainee' else '' }}> Mitarbeiter</label>
+        <label class="checkbox-label"><input type="radio" name="member_type" value="trainee" {{ 'checked' if create_prefill and create_prefill.member_type == 'trainee' else '' }}> Trainingsmitarbeiter</label>
       </div>
     </div>
     <label class="checkbox-label full">
-      <input type="checkbox" name="is_dashboard_invisible" value="1">
+      <input type="checkbox" name="is_dashboard_invisible" value="1" {{ 'checked' if create_prefill and create_prefill.is_dashboard_invisible else '' }}>
       Im Dashboard ausblenden
     </label>
     <label class="full">Notizen
-      <textarea name="notes" rows="3" placeholder="Interne Notizen zum Benutzer …"></textarea>
+      <textarea name="notes" rows="3" placeholder="Interne Notizen zum Benutzer …">{{ create_prefill.notes if create_prefill else '' }}</textarea>
     </label>
     <p class="full req-legend"><span class="req-mark">*</span> Pflichtfeld</p>
     <div class="actions-row">

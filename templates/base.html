@@ -122,11 +122,28 @@
   <main class="container">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-        <div class="flash-stack">
+        <div class="flash-stack" id="flash-stack">
           {% for category, message in messages %}
             <div class="flash {{ category }}">{{ message }}</div>
           {% endfor %}
         </div>
+        <script>
+          (function () {
+            var stack = document.getElementById("flash-stack");
+            if (!stack) return;
+            var flashes = Array.from(stack.querySelectorAll(".flash"));
+            flashes.forEach(function (el) {
+              var delay = el.classList.contains("error") ? 6000 : 4000;
+              setTimeout(function () {
+                el.classList.add("flash-hiding");
+                el.addEventListener("transitionend", function () {
+                  el.remove();
+                  if (!stack.querySelector(".flash")) stack.remove();
+                }, { once: true });
+              }, delay);
+            });
+          })();
+        </script>
       {% endif %}
     {% endwith %}
 
@@ -183,6 +200,22 @@
         const next = document.body.dataset.navCollapsed !== "true";
         apply(next);
         localStorage.setItem(STORAGE_KEY, next ? "true" : "false");
+      });
+    })();
+  </script>
+  <script>
+    (function () {
+      var SCROLL_KEY = "scroll_restore";
+      var saved = sessionStorage.getItem(SCROLL_KEY);
+      if (saved !== null) {
+        sessionStorage.removeItem(SCROLL_KEY);
+        window.scrollTo(0, parseInt(saved, 10));
+      }
+      document.addEventListener("submit", function (e) {
+        var form = e.target;
+        if (form && form.method && form.method.toLowerCase() === "post") {
+          sessionStorage.setItem(SCROLL_KEY, Math.round(window.scrollY));
+        }
       });
     })();
   </script>

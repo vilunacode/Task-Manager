@@ -1144,6 +1144,14 @@ body[data-theme="dark"] .task-view-assignees {
   padding: 10px 12px;
   border: 1px solid transparent;
   font-weight: 600;
+  transition: opacity 0.5s ease, max-height 0.4s ease, padding 0.4s ease, margin 0.4s ease;
+  overflow: hidden;
+}
+.flash.flash-hiding {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .flash.success {
