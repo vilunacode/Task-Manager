@@ -172,7 +172,7 @@
 
         {% if location.floors %}
           {% for floor in location.floors %}
-          <details style="border:1px solid var(--line); border-radius:10px; margin-bottom:8px;">
+          <details style="border:1px solid var(--line); border-radius:10px; margin-bottom:8px;" {% if request.args.get('open_floor')|int == floor.id %}open{% endif %}>
             <summary style="display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; cursor:pointer; list-style:none; user-select:none;">
               <span style="display:flex; align-items:center; gap:8px;">
                 <span class="floor-arrow">▶</span>

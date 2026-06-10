@@ -2914,7 +2914,7 @@ def settings_page():
             )
             g.pop("rooms_by_location", None)
             flash(f'Ebene "{floor_name}" wurde erstellt.', "success")
-            return redirect(url_for("settings_page"))
+            return redirect(url_for("settings_page", open_location=location_id))
 
         if action == "delete-floor":
             if not user["is_admin"]:
@@ -2924,13 +2924,16 @@ def settings_page():
             if floor_id is None:
                 flash("Ungültige Ebene.", "error")
                 return redirect(url_for("settings_page"))
-            floor = query_one("SELECT id, name FROM room_floors WHERE id = ?", (floor_id,))
+            floor = query_one("SELECT id, name, location_id FROM room_floors WHERE id = ?", (floor_id,))
             if floor is None:
                 flash("Ebene nicht gefunden.", "error")
                 return redirect(url_for("settings_page"))
+            location_id_for_floor = floor.get("location_id")
             execute("DELETE FROM room_floors WHERE id = ?", (floor_id,))
             g.pop("rooms_by_location", None)
             flash(f'Ebene "{floor["name"]}" und alle zugehörigen Räume wurden entfernt.', "success")
+            if location_id_for_floor:
+                return redirect(url_for("settings_page", open_location=location_id_for_floor))
             return redirect(url_for("settings_page"))
 
         if action == "create-room":
@@ -2962,7 +2965,7 @@ def settings_page():
             )
             g.pop("rooms_by_location", None)
             flash(f'Raum "{room_name}" wurde hinzugefügt.', "success")
-            return redirect(url_for("settings_page"))
+            return redirect(url_for("settings_page", open_floor=floor_id))
 
         if action == "delete-room":
             if not user["is_admin"]:
@@ -2972,13 +2975,16 @@ def settings_page():
             if room_id is None:
                 flash("Ungültiger Raum.", "error")
                 return redirect(url_for("settings_page"))
-            room = query_one("SELECT id, name FROM room_entries WHERE id = ?", (room_id,))
+            room = query_one("SELECT id, name, floor_id FROM room_entries WHERE id = ?", (room_id,))
             if room is None:
                 flash("Raum nicht gefunden.", "error")
                 return redirect(url_for("settings_page"))
+            room_floor_id = room.get("floor_id")
             execute("DELETE FROM room_entries WHERE id = ?", (room_id,))
             g.pop("rooms_by_location", None)
             flash(f'Raum "{room["name"]}" wurde entfernt.', "success")
+            if room_floor_id:
+                return redirect(url_for("settings_page", open_floor=room_floor_id))
             return redirect(url_for("settings_page"))
 
         flash("Unbekannte Aktion.", "error")
