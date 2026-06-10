@@ -725,14 +725,14 @@
     };
 
     const hasCategories = {{ 'true' if ticket_category_options else 'false' }};
-    openBtn.addEventListener("click", () => {
+    if (openBtn) openBtn.addEventListener("click", () => {
       if (!hasCategories) {
         document.getElementById("no-category-dialog").showModal();
       } else {
         dialog.showModal();
       }
     });
-    closeBtn.addEventListener("click", () => dialog.close());
+    if (closeBtn) closeBtn.addEventListener("click", () => dialog.close());
     closeTaskDialogAbort.addEventListener("click", () => {
       pendingCloseTaskId = null;
       closeTaskDialog.close();

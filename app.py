@@ -2293,7 +2293,7 @@ def login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
 
-        user = query_one("SELECT * FROM users WHERE username = ?", (username,))
+        user = query_one("SELECT * FROM users WHERE lower(username) = lower(?)", (username,))
         if user is None or not check_password_hash(user["password_hash"], password):
             flash("Ungültige Anmeldedaten.", "error")
             return render_template("login.html")
@@ -3571,6 +3571,7 @@ def task_detail(task_id: int):
         can_edit_task_content=can_edit_task_content(user, task_id),
         can_comment=(task["status"] != STATUS_CLOSED) and (user["is_admin"] or can_manage_task(user, task_id)),
         show_sidebar=False,
+        is_viewer=user["role"] == ROLE_VIEWER and not user["is_admin"],
     )
 
 

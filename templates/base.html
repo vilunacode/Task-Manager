@@ -80,7 +80,9 @@
           </a>
           <a href="{{ url_for('manage_users') }}">Benutzer</a>
           {% endif %}
+          {% if user['role'] != 'viewer' %}
           <a href="{{ url_for('settings_page') }}">Einstellungen</a>
+          {% endif %}
           {% endblock %}
         </nav>
         <div class="topbar-actions">
