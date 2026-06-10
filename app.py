@@ -749,7 +749,7 @@ def init_db() -> None:
                     "BO45", "BO46", "BO47", "BO48", "BO50", "BO51", "BO52", "BO53", "BO54", "BO55",
                     "BO56", "BO58", "BO60", "BO61", "BO62", "BO63", "BO64", "BO65", "BO66",
                 ]},
-                {"name": "EE", "rooms": ["EE03", "EE04", "EE05", "EE07", "EE08", "EE09", "EE10", "EE11", "EE13", "EE15"]},
+                {"name": "EE", "rooms": ["EE03", "EE04", "EE05", "EE06", "EE07", "EE08", "EE09", "EE10", "EE11", "EE13", "EE15"]},
                 {"name": "EO", "rooms": ["EO01", "EO02", "EO05", "Kantine"]},
                 {"name": "EU", "rooms": [
                     "EU01", "EU03", "EU04", "EU05", "EU06", "EU07", "EU08", "EU09", "EU10",
