@@ -2928,7 +2928,7 @@ def settings_page():
             if floor is None:
                 flash("Ebene nicht gefunden.", "error")
                 return redirect(url_for("settings_page"))
-            location_id_for_floor = floor.get("location_id")
+            location_id_for_floor = floor["location_id"]
             execute("DELETE FROM room_floors WHERE id = ?", (floor_id,))
             g.pop("rooms_by_location", None)
             flash(f'Ebene "{floor["name"]}" und alle zugehörigen Räume wurden entfernt.', "success")
@@ -2979,13 +2979,11 @@ def settings_page():
             if room is None:
                 flash("Raum nicht gefunden.", "error")
                 return redirect(url_for("settings_page"))
-            room_floor_id = room.get("floor_id")
+            room_floor_id = room["floor_id"]
             execute("DELETE FROM room_entries WHERE id = ?", (room_id,))
             g.pop("rooms_by_location", None)
             flash(f'Raum "{room["name"]}" wurde entfernt.', "success")
-            if room_floor_id:
-                return redirect(url_for("settings_page", open_floor=room_floor_id))
-            return redirect(url_for("settings_page"))
+            return redirect(url_for("settings_page", open_floor=room_floor_id))
 
         flash("Unbekannte Aktion.", "error")
         return redirect(url_for("settings_page"))
