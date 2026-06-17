@@ -5,6 +5,16 @@
   <section class="card overview-card">
     <div class="section-head">
       <h1>Task-Übersicht</h1>
+      <div class="overview-sort-controls">
+        <label for="overview-sort">Sortierung</label>
+        <select id="overview-sort">
+          <option value="updated_at">Zuletzt aktualisiert</option>
+          <option value="priority_asc">Priorität (wichtigste zuerst)</option>
+          <option value="due_date">Fälligkeitsdatum</option>
+          <option value="created_at">Erstelldatum</option>
+          <option value="title">Titel (A–Z)</option>
+        </select>
+      </div>
       <span id="overview-clock" class="overview-clock"></span>
     </div>
 
@@ -18,7 +28,11 @@
             <div class="overview-task-card"
               data-task-id="{{ task['id'] }}"
               data-created-at="{{ task['created_at'] }}"
+              data-updated-at="{{ task['updated_at'] or '' }}"
               data-status="{{ task['status'] }}"
+              data-priority="{{ task['priority'] or 3 }}"
+              data-due-date="{{ task['due_date'] or '' }}"
+              data-title="{{ task['title'] | e }}"
               data-description="{{ task['description'] | e }}"
               data-contact-display="{{ task['contact_person_display'] | e }}"
               data-creator-name="{{ task['creator_name'] | e }}"
@@ -177,10 +191,14 @@
       card.className = "overview-task-card new-task-pop";
       card.dataset.taskId = String(task.id);
       card.dataset.createdAt = task.created_at || "";
+      card.dataset.updatedAt = task.updated_at || "";
       card.dataset.status = task.status || "";
+      card.dataset.dueDate = task.due_date || "";
+      card.dataset.title = task.title || "";
       applyTooltipData(card, task);
 
       const priority = clampPriority(task.priority);
+      card.dataset.priority = String(priority);
       const priorityCorner = document.createElement("span");
       priorityCorner.className = `task-priority-corner priority-${priority}`;
       priorityCorner.textContent = String(priority);
@@ -206,6 +224,9 @@
 
     const updateTaskCard = (card, task) => {
       card.dataset.status = task.status || "";
+      card.dataset.updatedAt = task.updated_at || card.dataset.updatedAt || "";
+      card.dataset.dueDate = task.due_date || card.dataset.dueDate || "";
+      card.dataset.title = task.title || card.dataset.title || "";
       applyTooltipData(card, task);
 
       const title = card.querySelector("strong");
@@ -224,6 +245,7 @@
       }
 
       const priority = clampPriority(task.priority);
+      card.dataset.priority = String(priority);
       const priorityCorner = card.querySelector(".task-priority-corner");
       if (priorityCorner) {
         priorityCorner.className = `task-priority-corner priority-${priority}`;
@@ -259,6 +281,56 @@
     if (hasFresh) {
       playBeep();
     }
+
+    const SORT_STORAGE_KEY = "task_manager_overview_sort_v1";
+    let currentSort = localStorage.getItem(SORT_STORAGE_KEY) || "updated_at";
+
+    const getSortValue = (card, sort) => {
+      switch (sort) {
+        case "priority_asc":
+          return Number(card.dataset.priority) || 3;
+        case "due_date": {
+          const raw = card.dataset.dueDate || "";
+          return raw ? raw : "￿";
+        }
+        case "created_at":
+          return -(new Date(card.dataset.createdAt || 0).getTime());
+        case "updated_at":
+          return -(new Date(card.dataset.updatedAt || card.dataset.createdAt || 0).getTime());
+        case "title":
+          return (card.dataset.title || "").toLowerCase();
+        default:
+          return 0;
+      }
+    };
+
+    const sortColumn = (column) => {
+      const list = column.querySelector(".overview-task-list");
+      if (!list) return;
+      const taskCards = Array.from(list.querySelectorAll(".overview-task-card"));
+      taskCards.sort((a, b) => {
+        const va = getSortValue(a, currentSort);
+        const vb = getSortValue(b, currentSort);
+        if (va < vb) return -1;
+        if (va > vb) return 1;
+        return 0;
+      });
+      taskCards.forEach((card) => list.appendChild(card));
+    };
+
+    const sortAllColumns = () => columns.forEach(sortColumn);
+
+    const sortSelect = document.getElementById("overview-sort");
+    if (sortSelect) {
+      sortSelect.value = currentSort;
+      sortSelect.addEventListener("change", () => {
+        currentSort = sortSelect.value;
+        localStorage.setItem(SORT_STORAGE_KEY, currentSort);
+        sortAllColumns();
+      });
+    }
+
+    sortAllColumns();
 
     const pollAndSyncTasks = async () => {
       try {
@@ -321,6 +393,7 @@
         });
 
         columns.forEach((column) => updateCount(column));
+        sortAllColumns();
 
         if (foundNew) {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(seen).slice(-500)));

@@ -101,10 +101,10 @@
         </tr>
         {% endif %}
         {% set ns.last_group = current_group %}
-        <tr class="{{ 'user-row-inactive' if account['is_inactive'] else '' }}">
+        <tr class="{{ 'user-row-inactive' if account['effectively_inactive'] else '' }}">
           <td>{{ account['username'] }}</td>
           <td>
-            <span class="initial-badge {{ account['color_class'] }}{{ ' badge-inactive' if account['is_inactive'] else '' }}">{{ account['initials'] }}</span>
+            <span class="initial-badge {{ account['color_class'] }}{{ ' badge-inactive' if account['effectively_inactive'] else '' }}">{{ account['initials'] }}</span>
           </td>
           <td><small class="muted">{{ 'Trainingsmitarbeiter' if account['member_type'] == 'trainee' else 'Mitarbeiter' }}</small></td>
           <td>{{ account['role_label'] }}</td>
@@ -115,40 +115,56 @@
               <input type="hidden" name="user_id" value="{{ account['id'] }}">
               <button type="submit" class="secondary small-btn">Aktivieren</button>
             </form>
-            {% if account['inactive_until'] %}
-            {% set iu = account['inactive_until'] %}
-            <small class="muted">bis {{ iu[8:10] }}.{{ iu[5:7] }}.{{ iu[:4] }} - {{ iu[11:16] }} Uhr</small>
-            {% else %}
             <small class="muted">unbegrenzt</small>
-            {% endif %}
             {% else %}
             <button type="button" class="secondary small-btn" onclick="document.getElementById('inactive-dialog-{{ account.id }}').showModal()">Inaktiv setzen</button>
-            <dialog id="inactive-dialog-{{ account.id }}" class="task-dialog confirm-dialog-small">
+            <dialog id="inactive-dialog-{{ account.id }}" class="task-dialog">
               <form method="post">
-                <div class="dialog-head">
+                <div class="dialog-head full">
                   <strong>Inaktiv setzen: {{ account['username'] }}</strong>
                   <button type="button" class="link-btn" onclick="this.closest('dialog').close()">✕</button>
                 </div>
                 <input type="hidden" name="action" value="toggle-inactive">
                 <input type="hidden" name="user_id" value="{{ account['id'] }}">
-                <p class="muted" style="margin: 10px 0 6px; font-size: 0.85rem;">Dauer der Inaktivität</p>
-                <div class="radio-group" style="margin-bottom: 10px;">
-                  <label class="checkbox-label"><input type="radio" name="inactive_duration_type" value="unlimited" checked onchange="document.getElementById('inactive-until-wrap-{{ account.id }}').style.display='none'"> Unbegrenzt</label>
-                  <label class="checkbox-label"><input type="radio" name="inactive_duration_type" value="until" onchange="document.getElementById('inactive-until-wrap-{{ account.id }}').style.display='block'"> Bis Datum/Uhrzeit</label>
+                <p class="muted" style="margin:0 0 8px; font-size:0.85rem;">Art der Abwesenheit</p>
+                <div class="radio-group" style="margin-bottom:12px;">
+                  <label class="checkbox-label"><input type="radio" name="inactive_duration_type" value="unlimited" checked onchange="toggleInactiveType('{{ account.id }}','unlimited')"> Unbegrenzt</label>
+                  <label class="checkbox-label"><input type="radio" name="inactive_duration_type" value="once" onchange="toggleInactiveType('{{ account.id }}','once')"> Einmalig</label>
+                  <label class="checkbox-label"><input type="radio" name="inactive_duration_type" value="weekly" onchange="toggleInactiveType('{{ account.id }}','weekly')"> Wöchentlich</label>
                 </div>
-                <div id="inactive-until-wrap-{{ account.id }}" style="display:none; margin-bottom:10px;">
-                  <p class="muted" style="font-size:0.82rem; margin:0 0 6px;">Aktiv ab wieder:</p>
-                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                    <label style="font-size:0.85rem;">Datum <span class="req-mark">*</span>
-                      <input type="date" name="inactive_until_date" style="margin-top:4px;">
-                    </label>
-                    <label style="font-size:0.85rem;">Uhrzeit <small class="muted">(optional, sonst 00:00)</small>
-                      <input type="time" name="inactive_until_time" placeholder="00:00" style="margin-top:4px;">
-                    </label>
+
+                <div id="idlg-once-{{ account.id }}" style="display:none; margin-bottom:10px;">
+                  <input type="text" name="inactive_label" placeholder="Bezeichnung (optional)" style="width:100%; box-sizing:border-box; margin-bottom:10px; font-size:0.85rem;">
+                  <div style="display:flex; gap:16px; flex-wrap:wrap;">
+                    <div>
+                      <span style="font-size:0.82rem; font-weight:500; display:block; margin-bottom:5px;">Von</span>
+                      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+                        <label style="font-size:0.85rem; display:flex; flex-direction:column; gap:4px;"><span>Datum</span><input type="date" name="inactive_start_date"></label>
+                        <label style="font-size:0.85rem; display:flex; flex-direction:column; gap:4px;"><span>Uhrzeit <small class="muted">(sonst 00:00)</small></span><input type="time" name="inactive_start_time" placeholder="00:00"></label>
+                      </div>
+                    </div>
+                    <div>
+                      <span style="font-size:0.82rem; font-weight:500; display:block; margin-bottom:5px;">Bis</span>
+                      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+                        <label style="font-size:0.85rem; display:flex; flex-direction:column; gap:4px;"><span>Datum</span><input type="date" name="inactive_end_date"></label>
+                        <label style="font-size:0.85rem; display:flex; flex-direction:column; gap:4px;"><span>Uhrzeit <small class="muted">(sonst 23:59)</small></span><input type="time" name="inactive_end_time" placeholder="23:59"></label>
+                      </div>
+                    </div>
                   </div>
                 </div>
+
+                <div id="idlg-weekly-{{ account.id }}" style="display:none; margin-bottom:10px;">
+                  <input type="text" name="inactive_weekly_label" placeholder="Bezeichnung (optional)" style="width:100%; box-sizing:border-box; margin-bottom:10px; font-size:0.85rem;">
+                  <span style="font-size:0.85rem; font-weight:500;">Wochentage</span>
+                  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">
+                    {% for day_val, day_lbl in [('0','Mo'),('1','Di'),('2','Mi'),('3','Do'),('4','Fr'),('5','Sa'),('6','So')] %}
+                    <label class="checkbox-label" style="font-size:0.85rem;"><input type="checkbox" name="inactive_weekdays" value="{{ day_val }}"> {{ day_lbl }}</label>
+                    {% endfor %}
+                  </div>
+                </div>
+
                 <div class="compact-actions">
-                  <button type="submit">Inaktiv setzen</button>
+                  <button type="submit">Speichern</button>
                   <button type="button" class="secondary" onclick="this.closest('dialog').close()">Abbrechen</button>
                 </div>
               </form>
@@ -200,19 +216,69 @@
                   </div>
                 </div>
                 <label class="checkbox-label">
-                  <input type="checkbox" name="is_inactive" value="1" {{ 'checked' if account['is_inactive'] else '' }} id="edit-inactive-cb-{{ account.id }}" onchange="document.getElementById('edit-inactive-until-wrap-{{ account.id }}').style.display = this.checked ? 'block' : 'none'">
-                  Inaktiv <small class="muted">(z. B. Urlaub / längere Abwesenheit)</small>
+                  <input type="checkbox" name="is_inactive" value="1" {{ 'checked' if account['is_inactive'] else '' }}>
+                  Inaktiv <small class="muted">(unbegrenzt)</small>
                 </label>
-                <div id="edit-inactive-until-wrap-{{ account.id }}" style="{{ '' if account['is_inactive'] else 'display:none;' }}">
-                  <p class="muted" style="font-size:0.82rem; margin:4px 0 6px;">Aktiv ab wieder <small>(leer = unbegrenzt)</small></p>
-                  <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                    <label style="font-size:0.85rem;">Datum
-                      <input type="date" name="inactive_until_date" value="{{ account['inactive_until'][:10] if account['inactive_until'] else '' }}" style="margin-top:4px;">
-                    </label>
-                    <label style="font-size:0.85rem;">Uhrzeit <small class="muted">(optional, sonst 00:00)</small>
-                      <input type="time" name="inactive_until_time" value="{{ account['inactive_until'][11:16] if account['inactive_until'] and account['inactive_until'][11:16] != '00:00' else '' }}" placeholder="00:00" style="margin-top:4px;">
-                    </label>
+                <div class="full absence-rules-section">
+                  <span class="field-label">Geplante Abwesenheiten</span>
+                  <div id="absence-rules-list-{{ account.id }}" class="absence-rules-list">
+                    {% if account.absence_rules %}
+                      {% for rule in account.absence_rules %}
+                      <div class="absence-rule-row" id="absence-rule-{{ rule.id }}">
+                        <span class="absence-kind-badge {{ rule.kind }}">{{ 'Einmalig' if rule.kind == 'once' else 'Wdh.' }}</span>
+                        <span class="absence-rule-text">
+                          {%- if rule.label %}<strong>{{ rule.label }}</strong> – {% endif -%}
+                          {%- if rule.kind == 'once' -%}
+                            {{ format_datetime(rule.start_at) }} → {{ format_datetime(rule.end_at) if rule.end_at else 'offen' }}
+                          {%- else -%}
+                            {{ format_weekdays(rule.weekdays) }}
+                          {%- endif -%}
+                        </span>
+                        <button type="button" class="link-btn muted" onclick="deleteAbsenceRule({{ rule.id }}, {{ account.id }})">✕</button>
+                      </div>
+                      {% endfor %}
+                    {% else %}
+                      <p id="absence-empty-{{ account.id }}" class="muted absence-empty">Keine Einträge</p>
+                    {% endif %}
                   </div>
+                  <details id="add-absence-details-{{ account.id }}" class="add-absence-details">
+                    <summary>+ Neue Abwesenheit</summary>
+                    <div class="add-absence-form">
+                      <div class="radio-group" style="margin-bottom:10px;">
+                        <label class="checkbox-label"><input type="radio" name="ab_kind_{{ account.id }}" value="once" checked onchange="updateAbsenceKind({{ account.id }})"> Einmalig</label>
+                        <label class="checkbox-label"><input type="radio" name="ab_kind_{{ account.id }}" value="weekly" onchange="updateAbsenceKind({{ account.id }})"> Wöchentlich</label>
+                      </div>
+                      <input type="text" id="ab-label-{{ account.id }}" placeholder="Bezeichnung (z.B. Urlaub, HomeOffice)" class="absence-label-input">
+                      <div id="ab-once-{{ account.id }}" class="ab-fields">
+                        <div style="display:flex; gap:16px; flex-wrap:wrap;">
+                          <div>
+                            <span style="font-size:0.82rem; font-weight:500; display:block; margin-bottom:5px;">Von</span>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+                              <label style="font-size:0.85rem; display:flex; flex-direction:column; gap:4px;"><span>Datum</span><input type="date" id="ab-start-date-{{ account.id }}"></label>
+                              <label style="font-size:0.85rem; display:flex; flex-direction:column; gap:4px;"><span>Uhrzeit <small class="muted">(sonst 00:00)</small></span><input type="time" id="ab-start-time-{{ account.id }}" placeholder="00:00"></label>
+                            </div>
+                          </div>
+                          <div>
+                            <span style="font-size:0.82rem; font-weight:500; display:block; margin-bottom:5px;">Bis</span>
+                            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;">
+                              <label style="font-size:0.85rem; display:flex; flex-direction:column; gap:4px;"><span>Datum</span><input type="date" id="ab-end-date-{{ account.id }}"></label>
+                              <label style="font-size:0.85rem; display:flex; flex-direction:column; gap:4px;"><span>Uhrzeit <small class="muted">(sonst 23:59)</small></span><input type="time" id="ab-end-time-{{ account.id }}" placeholder="23:59"></label>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div id="ab-weekly-{{ account.id }}" class="ab-fields" style="display:none;">
+                        <span style="font-size:0.85rem; font-weight:500;">Wochentage</span>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">
+                          {% for day_val, day_lbl in [('0','Mo'),('1','Di'),('2','Mi'),('3','Do'),('4','Fr'),('5','Sa'),('6','So')] %}
+                          <label class="checkbox-label" style="font-size:0.85rem;"><input type="checkbox" class="ab-weekday-{{ account.id }}" value="{{ day_val }}"> {{ day_lbl }}</label>
+                          {% endfor %}
+                        </div>
+                      </div>
+                      <p id="ab-error-{{ account.id }}" class="ab-error" hidden></p>
+                      <button type="button" class="secondary" style="margin-top:10px;" onclick="addAbsenceRule({{ account.id }})">Hinzufügen</button>
+                    </div>
+                  </details>
                 </div>
                 <label class="checkbox-label">
                   <input type="checkbox" name="is_dashboard_invisible" value="1" {{ 'checked' if account['is_dashboard_invisible'] else '' }}>
@@ -430,9 +496,91 @@
 </dialog>
 
 <script>
+function toggleInactiveType(userId, type) {
+  document.getElementById(`idlg-once-${userId}`).style.display   = type === 'once'   ? '' : 'none';
+  document.getElementById(`idlg-weekly-${userId}`).style.display = type === 'weekly' ? '' : 'none';
+}
+
 function openDeleteUserConfirm(userId) {
   document.getElementById('delete-user-id').value = userId;
   document.getElementById('delete-user-dialog').showModal();
+}
+
+function updateAbsenceKind(userId) {
+  const kind = document.querySelector(`input[name="ab_kind_${userId}"]:checked`).value;
+  document.getElementById(`ab-once-${userId}`).style.display = kind === 'once' ? '' : 'none';
+  document.getElementById(`ab-weekly-${userId}`).style.display = kind === 'weekly' ? '' : 'none';
+}
+
+async function addAbsenceRule(userId) {
+  const kind = document.querySelector(`input[name="ab_kind_${userId}"]:checked`).value;
+  const label = (document.getElementById(`ab-label-${userId}`).value || '').trim();
+  const errorEl = document.getElementById(`ab-error-${userId}`);
+  const showError = (msg) => { if (errorEl) { errorEl.textContent = msg; errorEl.hidden = false; } };
+  const clearError = () => { if (errorEl) errorEl.hidden = true; };
+  clearError();
+
+  const payload = { kind, label };
+  if (kind === 'once') {
+    const startDate = document.getElementById(`ab-start-date-${userId}`).value;
+    const startTime = document.getElementById(`ab-start-time-${userId}`).value;
+    const endDate   = document.getElementById(`ab-end-date-${userId}`).value;
+    const endTime   = document.getElementById(`ab-end-time-${userId}`).value;
+    const nowPad = n => String(n).padStart(2, '0');
+    const now = new Date();
+    const nowStr = `${now.getFullYear()}-${nowPad(now.getMonth()+1)}-${nowPad(now.getDate())}T${nowPad(now.getHours())}:${nowPad(now.getMinutes())}`;
+    payload.start_at = startDate ? (startDate + 'T' + (startTime || '00:00')) : nowStr;
+    const effectiveStartDate = startDate || nowStr.slice(0, 10);
+    payload.end_at   = endDate ? (endDate + 'T' + (endTime || '23:59')) : (effectiveStartDate + 'T23:59');
+  } else {
+    const days = Array.from(document.querySelectorAll(`.ab-weekday-${userId}:checked`)).map(cb => cb.value);
+    if (!days.length) { showError('Bitte mindestens einen Wochentag auswählen.'); return; }
+    payload.weekdays = days.join(',');
+  }
+
+  const resp = await fetch(`/admin/users/${userId}/absence-rules`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) { showError('Fehler beim Speichern. Bitte erneut versuchen.'); return; }
+  const data = await resp.json();
+
+  document.getElementById(`absence-empty-${userId}`)?.remove();
+  const list = document.getElementById(`absence-rules-list-${userId}`);
+  const row = document.createElement('div');
+  row.className = 'absence-rule-row';
+  row.id = `absence-rule-${data.id}`;
+  row.innerHTML = `<span class="absence-kind-badge ${data.kind}">${data.kind === 'once' ? 'Einmalig' : 'Wdh.'}</span>`
+    + `<span class="absence-rule-text">${data.label ? `<strong>${escHtml(data.label)}</strong> – ` : ''}${escHtml(data.display)}</span>`
+    + `<button type="button" class="link-btn muted" onclick="deleteAbsenceRule(${data.id}, ${userId})">✕</button>`;
+  list.appendChild(row);
+
+  document.getElementById(`ab-label-${userId}`).value = '';
+  document.getElementById(`ab-start-date-${userId}`).value = '';
+  document.getElementById(`ab-start-time-${userId}`).value = '';
+  document.getElementById(`ab-end-date-${userId}`).value = '';
+  document.getElementById(`ab-end-time-${userId}`).value = '';
+  document.querySelectorAll(`.ab-weekday-${userId}`).forEach(cb => cb.checked = false);
+  document.getElementById(`add-absence-details-${userId}`).open = false;
+}
+
+async function deleteAbsenceRule(ruleId, userId) {
+  const resp = await fetch(`/admin/users/${userId}/absence-rules/${ruleId}/delete`, { method: 'POST' });
+  if (!resp.ok) { return; }
+  document.getElementById(`absence-rule-${ruleId}`)?.remove();
+  const list = document.getElementById(`absence-rules-list-${userId}`);
+  if (list && !list.querySelector('.absence-rule-row')) {
+    const p = document.createElement('p');
+    p.id = `absence-empty-${userId}`;
+    p.className = 'muted absence-empty';
+    p.textContent = 'Keine Einträge';
+    list.prepend(p);
+  }
+}
+
+function escHtml(str) {
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
 {% endblock %}

@@ -1700,6 +1700,136 @@ body[data-theme="dark"] .day-dialog-event-item {
   margin-bottom: 0;
 }
 
+.absence-rules-section {
+  margin-top: 4px;
+}
+
+.absence-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 6px;
+  min-height: 4px;
+}
+
+.absence-rule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: var(--surface, #f8fafc);
+  border: 1px solid var(--line, #e2e8f0);
+  font-size: 0.85rem;
+}
+
+body[data-theme="dark"] .absence-rule-row {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: #334155;
+}
+
+.absence-kind-badge {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.absence-kind-badge.once {
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  color: #92400e;
+}
+
+body[data-theme="dark"] .absence-kind-badge.once {
+  color: #fcd34d;
+}
+
+.absence-kind-badge.weekly {
+  background: color-mix(in srgb, #3b82f6 18%, transparent);
+  color: #1e3a8a;
+}
+
+body[data-theme="dark"] .absence-kind-badge.weekly {
+  color: #93c5fd;
+}
+
+.absence-rule-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.absence-empty {
+  font-size: 0.85rem;
+  margin: 2px 0 6px;
+}
+
+.add-absence-details {
+  margin-top: 6px;
+}
+
+.add-absence-details > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--brand, #0f766e);
+  font-weight: 500;
+  user-select: none;
+  list-style: none;
+  padding: 3px 0;
+}
+
+.add-absence-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.add-absence-form {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--brand, #0f766e) 25%, transparent);
+  background: color-mix(in srgb, var(--brand, #0f766e) 5%, transparent);
+}
+
+.absence-label-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+}
+
+.ab-fields {
+  margin-top: 2px;
+}
+
+.ab-error {
+  color: #dc2626;
+  font-size: 0.82rem;
+  margin: 8px 0 0;
+}
+
+body[data-theme="dark"] .ab-error {
+  color: #f87171;
+}
+
+.overview-sort-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.overview-sort-controls label {
+  color: var(--muted, #64748b);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.overview-sort-controls select {
+  padding: 6px 10px;
+  font-size: 14px;
+  border-radius: 8px;
+}
+
 .overview-clock {
   display: inline-flex;
   flex-direction: column;

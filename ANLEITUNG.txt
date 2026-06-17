@@ -68,7 +68,7 @@ SCHRITT 3: EXE erstellen
 3. Das Skript fragt zwei Dinge:
 
      >> App-Name (Enter für 'Ticket-System')
-        Gewünschten Namen eingeben, z.B. "Helpdesk" oder Enter
+        Gewünschten Namen eingeben, z.B. "ITLAB-Ticket-System" oder Enter
         für den Standardnamen drücken.
 
      >> Icon-Datei (Enter für 'ts.ico')

@@ -350,6 +350,10 @@ def auto_reactivate_expired_inactive_users():
         "UPDATE users SET is_inactive = 0, inactive_until = NULL WHERE is_inactive = 1 AND inactive_until IS NOT NULL AND inactive_until <= ?",
         (now_iso,),
     )
+    execute(
+        "DELETE FROM user_absence_rules WHERE kind = 'once' AND end_at IS NOT NULL AND TRIM(end_at) != '' AND end_at < ?",
+        (now_iso,),
+    )
 
 
 def init_db() -> None:
@@ -514,6 +518,18 @@ def init_db() -> None:
             created_at TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS user_absence_rules (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL DEFAULT 'once',
+            label TEXT NOT NULL DEFAULT '',
+            start_at TEXT,
+            end_at TEXT,
+            weekdays TEXT,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_absence_rules_user ON user_absence_rules(user_id);
         CREATE INDEX IF NOT EXISTS idx_task_assignees_user ON task_assignees(user_id);
         CREATE INDEX IF NOT EXISTS idx_task_assignees_task ON task_assignees(task_id);
         CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);
@@ -1323,7 +1339,7 @@ def task_assignees_map(task_ids: list[int]):
                 "role_label": role_label(row["role"], row["is_admin"]),
                 "color_class": badge_color_class(row["role"], row["is_admin"]),
                 "badge_color": badge_color_value(row["role"], row["is_admin"]),
-                "is_inactive": bool(row["is_inactive"]),
+                "is_inactive": int(row["id"]) in effectively_inactive_user_ids(),
             }
         )
     return mapping
@@ -1432,6 +1448,7 @@ def sidebar_users():
             u.username ASC
         """
     )
+    inactive_ids = effectively_inactive_user_ids()
     return [
         {
             "id": row["id"],
@@ -1440,11 +1457,63 @@ def sidebar_users():
             "role_label": role_label(row["role"], row["is_admin"]),
             "color_class": badge_color_class(row["role"], row["is_admin"]),
             "assigned_task_count": int(row["assigned_task_count"] or 0),
-            "is_inactive": bool(row["is_inactive"]),
+            "is_inactive": int(row["id"]) in inactive_ids,
             "member_type": row["member_type"] or MEMBER_TYPE_REGULAR,
         }
         for row in rows
     ]
+
+
+WEEKDAY_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+
+
+def format_weekdays(weekdays_str: str) -> str:
+    days = [d.strip() for d in (weekdays_str or "").split(",") if d.strip().isdigit()]
+    labels = [WEEKDAY_LABELS[int(d)] for d in days if 0 <= int(d) <= 6]
+    return ", ".join(labels) if labels else "-"
+
+
+def get_absence_rules_by_user(user_ids: list[int]) -> dict[int, list[dict]]:
+    if not user_ids:
+        return {}
+    placeholders = ",".join(["?"] * len(user_ids))
+    rows = query_all(
+        f"SELECT * FROM user_absence_rules WHERE user_id IN ({placeholders}) ORDER BY created_at ASC",
+        tuple(user_ids),
+    )
+    result: dict[int, list[dict]] = {uid: [] for uid in user_ids}
+    for row in rows:
+        result[int(row["user_id"])].append(dict(row))
+    return result
+
+
+def effectively_inactive_user_ids() -> set[int]:
+    if "effectively_inactive_ids" not in g:
+        now = datetime.now(APP_TIMEZONE)
+        now_str = now.strftime("%Y-%m-%dT%H:%M")
+        current_weekday = str(now.weekday())  # 0=Montag, 6=Sonntag
+        manual = {int(row["id"]) for row in query_all("SELECT id FROM users WHERE is_inactive = 1")}
+        try:
+            once_rows = query_all(
+                """SELECT DISTINCT user_id FROM user_absence_rules
+                   WHERE kind = 'once' AND start_at <= ?
+                   AND (end_at IS NULL OR TRIM(end_at) = '' OR end_at >= ?)""",
+                (now_str, now_str),
+            )
+            from_once = {int(r["user_id"]) for r in once_rows}
+            weekly_rows = query_all(
+                "SELECT user_id, weekdays FROM user_absence_rules WHERE kind = 'weekly'"
+            )
+            from_weekly = {
+                int(r["user_id"])
+                for r in weekly_rows
+                if current_weekday in [d.strip() for d in (r["weekdays"] or "").split(",") if d.strip()]
+            }
+        except Exception:  # pylint: disable=broad-except
+            from_once = set()
+            from_weekly = set()
+        g.effectively_inactive_ids = manual | from_once | from_weekly
+    return g.effectively_inactive_ids
 
 
 def fetch_tasks(*, status: str | None = None, only_assigned_to: int | None = None, archived_only: bool = False):
@@ -1967,6 +2036,7 @@ def inject_helpers():
         "sidebar_users": badges,
         "format_datetime": format_datetime_for_display,
         "format_system_datetime": format_system_datetime_for_display,
+        "format_weekdays": format_weekdays,
         "datetime_input_value": format_datetime_for_input,
         "due_date_input_value": format_due_date_for_input,
         "due_time_input_value": format_due_time_for_input,
@@ -2500,7 +2570,9 @@ def overview_tasks_api():
                 "title": task["title"],
                 "status": task["status"],
                 "created_at": task["created_at"],
+                "updated_at": task.get("updated_at", "") or "",
                 "created_at_display": format_system_datetime_for_display(task["created_at"]),
+                "due_date": task.get("due_date", "") or "",
                 "due_date_display": format_datetime_for_display(task["due_date"]),
                 "priority": int(task.get("priority") or DEFAULT_TASK_PRIORITY),
                 "assignees": task["assignees"],
@@ -4152,6 +4224,12 @@ def manage_users():
             item["member_type"] = row["member_type"] or MEMBER_TYPE_REGULAR
             item["is_dashboard_invisible"] = bool(row["is_dashboard_invisible"])
             _enriched.append(item)
+        _user_ids = [item["id"] for item in _enriched]
+        _rules_by_user = get_absence_rules_by_user(_user_ids)
+        _inactive_ids = effectively_inactive_user_ids()
+        for item in _enriched:
+            item["absence_rules"] = _rules_by_user.get(item["id"], [])
+            item["effectively_inactive"] = item["id"] in _inactive_ids
         extra.setdefault("create_prefill", None)
         extra.setdefault("initials_conflict", None)
         extra.setdefault("initials_suggestion", None)
@@ -4515,23 +4593,57 @@ def manage_users():
             if target is None:
                 flash("Benutzer nicht gefunden.", "error")
                 return redirect(url_for("manage_users"))
-            new_val = 0 if target["is_inactive"] else 1
-            if new_val:
-                inactive_until = parse_inactive_until(
-                    request.form.get("inactive_until_date", ""),
-                    request.form.get("inactive_until_time", ""),
-                )
+            if target["is_inactive"]:
+                now_str = datetime.now(APP_TIMEZONE).strftime("%Y-%m-%dT%H:%M")
                 execute(
-                    "UPDATE users SET is_inactive = ?, inactive_until = ? WHERE id = ?",
-                    (1, inactive_until, target_id),
+                    "DELETE FROM user_absence_rules WHERE user_id = ? AND kind = 'once'"
+                    " AND start_at <= ? AND (end_at IS NULL OR TRIM(end_at) = '' OR end_at >= ?)",
+                    (int(target_id), now_str, now_str),
                 )
-                flash("Benutzer wurde als inaktiv markiert.", "success")
-            else:
                 execute(
                     "UPDATE users SET is_inactive = 0, inactive_until = NULL WHERE id = ?",
                     (target_id,),
                 )
                 flash("Benutzer wurde wieder als aktiv markiert.", "success")
+            else:
+                duration_type = request.form.get("inactive_duration_type", "unlimited")
+                ts = now_iso()
+                now_str = datetime.now(APP_TIMEZONE).strftime("%Y-%m-%dT%H:%M")
+
+                if duration_type == "once":
+                    start_date = request.form.get("inactive_start_date", "").strip()
+                    start_time = request.form.get("inactive_start_time", "").strip()
+                    end_date   = request.form.get("inactive_end_date", "").strip()
+                    end_time   = request.form.get("inactive_end_time", "").strip()
+                    label      = request.form.get("inactive_label", "").strip()[:100]
+                    start_at   = normalize_datetime_value(f"{start_date}T{start_time or '00:00'}") if start_date else now_str
+                    effective_start_date = start_at[:10]
+                    end_at = normalize_datetime_value(f"{end_date}T{end_time or '23:59'}") if end_date else f"{effective_start_date}T23:59"
+                    execute(
+                        "INSERT INTO user_absence_rules (user_id, kind, label, start_at, end_at, weekdays, created_at) VALUES (?,?,?,?,?,NULL,?)",
+                        (int(target_id), "once", label, start_at, end_at, ts),
+                    )
+                    flash("Abwesenheitszeitraum wurde eingetragen.", "success")
+
+                elif duration_type == "weekly":
+                    raw_days = request.form.getlist("inactive_weekdays")
+                    days = sorted([d for d in raw_days if d.isdigit() and 0 <= int(d) <= 6], key=int)
+                    label = request.form.get("inactive_weekly_label", "").strip()[:100]
+                    if not days:
+                        flash("Bitte mindestens einen Wochentag auswählen.", "error")
+                        return redirect(url_for("manage_users"))
+                    execute(
+                        "INSERT INTO user_absence_rules (user_id, kind, label, start_at, end_at, weekdays, created_at) VALUES (?,?,?,NULL,NULL,?,?)",
+                        (int(target_id), "weekly", label, ",".join(days), ts),
+                    )
+                    flash("Wöchentliche Abwesenheit wurde eingetragen.", "success")
+
+                else:
+                    execute(
+                        "UPDATE users SET is_inactive = 1, inactive_until = NULL WHERE id = ?",
+                        (target_id,),
+                    )
+                    flash("Benutzer wurde als inaktiv markiert.", "success")
             return redirect(url_for("manage_users"))
 
         if action == "delete":
@@ -4582,6 +4694,50 @@ def manage_users():
         return redirect(url_for("manage_users"))
 
     return _render_page()
+
+
+@app.route("/admin/users/<int:user_id>/absence-rules", methods=["POST"])
+@admin_required
+def add_absence_rule(user_id):
+    if not query_one("SELECT id FROM users WHERE id = ?", (user_id,)):
+        return jsonify({"error": "Benutzer nicht gefunden"}), 404
+    data = request.get_json(force=True, silent=True) or {}
+    kind = (data.get("kind") or "").strip()
+    if kind not in ("once", "weekly"):
+        return jsonify({"error": "Ungültiger Typ"}), 400
+    label = (data.get("label") or "").strip()[:100]
+    ts = now_iso()
+    if kind == "once":
+        start_at = normalize_datetime_value(data.get("start_at") or "")
+        end_at = normalize_datetime_value(data.get("end_at") or "")
+        if not start_at:
+            return jsonify({"error": "Startdatum erforderlich"}), 400
+        cur = execute(
+            "INSERT INTO user_absence_rules (user_id, kind, label, start_at, end_at, weekdays, created_at) VALUES (?,?,?,?,?,NULL,?)",
+            (user_id, kind, label, start_at, end_at or None, ts),
+        )
+        start_disp = format_datetime_for_display(start_at)
+        end_disp = format_datetime_for_display(end_at) if end_at else "offen"
+        display = f"{start_disp} → {end_disp}"
+    else:
+        raw_days = data.get("weekdays") or ""
+        days = [d.strip() for d in raw_days.split(",") if d.strip().isdigit() and 0 <= int(d.strip()) <= 6]
+        if not days:
+            return jsonify({"error": "Mindestens ein Wochentag erforderlich"}), 400
+        weekdays = ",".join(sorted(days, key=int))
+        cur = execute(
+            "INSERT INTO user_absence_rules (user_id, kind, label, start_at, end_at, weekdays, created_at) VALUES (?,?,?,NULL,NULL,?,?)",
+            (user_id, kind, label, weekdays, ts),
+        )
+        display = format_weekdays(weekdays)
+    return jsonify({"id": cur.lastrowid, "kind": kind, "label": label, "display": display})
+
+
+@app.route("/admin/users/<int:user_id>/absence-rules/<int:rule_id>/delete", methods=["POST"])
+@admin_required
+def delete_absence_rule(user_id, rule_id):
+    execute("DELETE FROM user_absence_rules WHERE id = ? AND user_id = ?", (rule_id, user_id))
+    return jsonify({"ok": True})
 
 
 @app.route("/admin/closed")
