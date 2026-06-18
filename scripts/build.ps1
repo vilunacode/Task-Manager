@@ -25,8 +25,9 @@ if ($IconFiles.Count -gt 0) {
     $IconFiles | ForEach-Object { Write-Host "   - $_" -ForegroundColor DarkGray }
     Write-Host ""
 }
-$IconFile = Read-Host ">> Icon-Datei (Enter fuer 'ts.ico')"
-if ([string]::IsNullOrWhiteSpace($IconFile)) { $IconFile = "ts.ico" }
+$DefaultIcon = if ($IconFiles.Count -gt 0) { $IconFiles[0] } else { "ts.ico" }
+$IconFile = Read-Host ">> Icon-Datei (Enter fuer '$DefaultIcon')"
+if ([string]::IsNullOrWhiteSpace($IconFile)) { $IconFile = $DefaultIcon }
 
 if (-not (Test-Path $IconFile)) {
     Write-Host ""
@@ -103,9 +104,7 @@ img = Image.open('$IconFile').convert('RGBA')
 w, h = img.size
 if w < 256 or h < 256:
     print(f'   HINWEIS: Quellbild ist nur {w}x{h} px. Fuer scharfe Icons mind. 256x256 verwenden.')
-sizes = [(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)]
-imgs = [img.resize(s, Image.LANCZOS) for s in sizes]
-imgs[0].save('$IcoForBuild', format='ICO', sizes=[i.size for i in imgs], append_images=imgs[1:])
+img.save('$IcoForBuild', format='ICO', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)])
 print('   ICO mit allen Groessen erstellt.')
 "
 if (-not (Test-Path $IcoForBuild)) {
