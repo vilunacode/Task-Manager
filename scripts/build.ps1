@@ -93,35 +93,37 @@ if (Test-Path $SpecFile) { Remove-Item $SpecFile -Force }
 Write-Host "   Fertig." -ForegroundColor Green
 
 # ── Icon vorbereiten ─────────────────────────────────────
+# Quellbild pruefen und Multi-Size-ICO erstellen
+$IcoForBuild = "_build_icon_temp.ico"
+Write-Host ">> Icon wird aufbereitet..." -ForegroundColor Yellow
+& $PythonCmd -c "
+from PIL import Image
+import sys
+img = Image.open('$IconFile').convert('RGBA')
+w, h = img.size
+if w < 256 or h < 256:
+    print(f'   HINWEIS: Quellbild ist nur {w}x{h} px. Fuer scharfe Icons mind. 256x256 verwenden.')
+sizes = [(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)]
+imgs = [img.resize(s, Image.LANCZOS) for s in sizes]
+imgs[0].save('$IcoForBuild', format='ICO', sizes=[i.size for i in imgs], append_images=imgs[1:])
+print('   ICO mit allen Groessen erstellt.')
+"
+if (-not (Test-Path $IcoForBuild)) {
+    Write-Host "   FEHLER: ICO-Erstellung fehlgeschlagen." -ForegroundColor Red
+    Read-Host "Druecke Enter zum Beenden"
+    exit 1
+}
+$IconForPyInstaller = $IcoForBuild
+Write-Host "   Fertig." -ForegroundColor Green
+
 if ($IconExt -eq ".png") {
-    # PNG fuer Tray direkt verwenden
     $TrayIcon = "_tray.png"
     Copy-Item $IconFile $TrayIcon
-
-    # PNG -> ICO konvertieren fuer PyInstaller --icon (Windows benoetigt ICO)
-    $IcoForBuild = "_build_icon_temp.ico"
-    Write-Host ">> PNG wird zu ICO konvertiert fuer EXE-Icon..." -ForegroundColor Yellow
-    & $PythonCmd -c "
-from PIL import Image
-img = Image.open('$IconFile').convert('RGBA')
-sizes = [(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)]
-resized = [img.resize(s, Image.LANCZOS) for s in sizes if s[0] <= max(img.size)]
-resized[0].save('$IcoForBuild', format='ICO', sizes=[r.size for r in resized], append_images=resized[1:])
-print('   ICO erstellt.')
-"
-    if (-not (Test-Path $IcoForBuild)) {
-        Write-Host "   FEHLER: ICO-Konvertierung fehlgeschlagen." -ForegroundColor Red
-        Read-Host "Druecke Enter zum Beenden"
-        exit 1
-    }
-    $IconForPyInstaller = $IcoForBuild
-    Write-Host "   Fertig." -ForegroundColor Green
 } else {
     $TrayIcon = "_tray.ico"
     Copy-Item $IconFile $TrayIcon
-    $IconForPyInstaller = $IconFile
-    $IcoForBuild = $null
 }
+$IcoForBuild = "_build_icon_temp.ico"
 
 # ── version.txt mit App-Name generieren ──────────────────
 $VersionFile = "version.txt"
