@@ -4896,7 +4896,13 @@ if __name__ == "__main__":
 
         # Tray-Icon laden
         try:
-            _tray_image = Image.open(os.path.join(_BUNDLE_DIR, "_tray.ico"))
+            for _tray_name in ("_tray.png", "_tray.ico"):
+                _tray_path = os.path.join(_BUNDLE_DIR, _tray_name)
+                if os.path.exists(_tray_path):
+                    _tray_image = Image.open(_tray_path)
+                    break
+            else:
+                _tray_image = Image.new("RGBA", (64, 64), (59, 130, 246, 255))
         except Exception:
             _tray_image = Image.new("RGBA", (64, 64), (59, 130, 246, 255))
 

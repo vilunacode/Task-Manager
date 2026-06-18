@@ -19,10 +19,10 @@ $AppName = Read-Host ">> App-Name (Enter fuer 'Ticket-System')"
 if ([string]::IsNullOrWhiteSpace($AppName)) { $AppName = "Ticket-System" }
 
 Write-Host ""
-$IcoFiles = Get-ChildItem -Path $ProjectRoot -Filter "*.ico" | Select-Object -ExpandProperty Name
-if ($IcoFiles.Count -gt 0) {
-    Write-Host "   Verfuegbare Icon-Dateien:" -ForegroundColor DarkGray
-    $IcoFiles | ForEach-Object { Write-Host "   - $_" -ForegroundColor DarkGray }
+$IconFiles = Get-ChildItem -Path $ProjectRoot -Include "*.ico","*.png" -File | Select-Object -ExpandProperty Name
+if ($IconFiles.Count -gt 0) {
+    Write-Host "   Verfuegbare Icon-Dateien (.ico / .png):" -ForegroundColor DarkGray
+    $IconFiles | ForEach-Object { Write-Host "   - $_" -ForegroundColor DarkGray }
     Write-Host ""
 }
 $IconFile = Read-Host ">> Icon-Datei (Enter fuer 'ts.ico')"
@@ -34,6 +34,8 @@ if (-not (Test-Path $IconFile)) {
     Read-Host "Druecke Enter zum Beenden"
     exit 1
 }
+
+$IconExt = [System.IO.Path]::GetExtension($IconFile).ToLower()
 
 Write-Host ""
 Write-Host "   App-Name : $AppName" -ForegroundColor Green
@@ -90,9 +92,36 @@ if (Test-Path $SpecFile) { Remove-Item $SpecFile -Force }
 
 Write-Host "   Fertig." -ForegroundColor Green
 
-# ── Icon mit festem Namen kopieren ───────────────────────
-$TrayIcon = "_tray.ico"
-Copy-Item $IconFile $TrayIcon
+# ── Icon vorbereiten ─────────────────────────────────────
+if ($IconExt -eq ".png") {
+    # PNG fuer Tray direkt verwenden
+    $TrayIcon = "_tray.png"
+    Copy-Item $IconFile $TrayIcon
+
+    # PNG -> ICO konvertieren fuer PyInstaller --icon (Windows benoetigt ICO)
+    $IcoForBuild = "_build_icon_temp.ico"
+    Write-Host ">> PNG wird zu ICO konvertiert fuer EXE-Icon..." -ForegroundColor Yellow
+    & $PythonCmd -c "
+from PIL import Image
+img = Image.open('$IconFile').convert('RGBA')
+sizes = [(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)]
+resized = [img.resize(s, Image.LANCZOS) for s in sizes if s[0] <= max(img.size)]
+resized[0].save('$IcoForBuild', format='ICO', sizes=[r.size for r in resized], append_images=resized[1:])
+print('   ICO erstellt.')
+"
+    if (-not (Test-Path $IcoForBuild)) {
+        Write-Host "   FEHLER: ICO-Konvertierung fehlgeschlagen." -ForegroundColor Red
+        Read-Host "Druecke Enter zum Beenden"
+        exit 1
+    }
+    $IconForPyInstaller = $IcoForBuild
+    Write-Host "   Fertig." -ForegroundColor Green
+} else {
+    $TrayIcon = "_tray.ico"
+    Copy-Item $IconFile $TrayIcon
+    $IconForPyInstaller = $IconFile
+    $IcoForBuild = $null
+}
 
 # ── version.txt mit App-Name generieren ──────────────────
 $VersionFile = "version.txt"
@@ -142,11 +171,12 @@ Write-Host ""
     --hidden-import pystray `
     --hidden-import PIL `
     --noconsole `
-    --icon $IconFile `
+    --icon $IconForPyInstaller `
     --version-file "version.txt"
 
-# ── Temporaere Icon-Kopie entfernen ───────────────────────
+# ── Temporaere Dateien entfernen ─────────────────────────
 Remove-Item $TrayIcon -ErrorAction SilentlyContinue
+if ($IcoForBuild) { Remove-Item $IcoForBuild -ErrorAction SilentlyContinue }
 
 # ── Ergebnis pruefen ──────────────────────────────────────
 Write-Host ""
