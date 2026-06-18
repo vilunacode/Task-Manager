@@ -17,6 +17,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
@@ -2047,6 +2048,22 @@ def inject_helpers():
         "custom_role_css_rules": custom_role_css_rules(),
         "room_locations_data": get_all_rooms_by_location(),
     }
+
+
+@app.route("/favicon.ico")
+@app.route("/favicon.png")
+def serve_favicon():
+    settings = app_settings()
+    filename = settings.get("favicon_filename", "") or "favicon.png"
+    filepath = os.path.join(app.static_folder, filename)
+    if not os.path.exists(filepath):
+        filename = "favicon.png"
+        filepath = os.path.join(app.static_folder, filename)
+    if not os.path.exists(filepath):
+        return "", 404
+    response = send_from_directory(app.static_folder, filename)
+    response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
 
 
 @app.route("/")

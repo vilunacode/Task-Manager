@@ -19,21 +19,7 @@
     }
     {% endfor %}
   </style>
-  {% if app_settings and app_settings['favicon_filename'] %}
-    {% set _fav_ext = app_settings['favicon_filename'].rsplit('.', 1)[-1].lower() %}
-    {% if _fav_ext == 'svg' %}
-      {% set _fav_type = 'image/svg+xml' %}
-    {% elif _fav_ext == 'png' %}
-      {% set _fav_type = 'image/png' %}
-    {% elif _fav_ext in ('jpg', 'jpeg') %}
-      {% set _fav_type = 'image/jpeg' %}
-    {% else %}
-      {% set _fav_type = 'image/x-icon' %}
-    {% endif %}
-  <link rel="icon" type="{{ _fav_type }}" href="{{ url_for('static', filename=app_settings['favicon_filename']) }}">
-  {% else %}
-  <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
-  {% endif %}
+  <link rel="icon" href="/favicon.ico">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body data-theme="{{ user['theme_mode'] if user and user['theme_mode'] in ('light', 'dark') else 'light' }}">
