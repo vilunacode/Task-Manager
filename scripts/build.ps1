@@ -19,7 +19,7 @@ $AppName = Read-Host ">> App-Name (Enter fuer 'Ticket-System')"
 if ([string]::IsNullOrWhiteSpace($AppName)) { $AppName = "Ticket-System" }
 
 Write-Host ""
-$IconFiles = Get-ChildItem -Path $ProjectRoot -Include "*.ico","*.png" -File | Select-Object -ExpandProperty Name
+$IconFiles = Get-ChildItem -Path "$ProjectRoot\*" -Include "*.ico","*.png" -File | Select-Object -ExpandProperty Name
 if ($IconFiles.Count -gt 0) {
     Write-Host "   Verfuegbare Icon-Dateien (.ico / .png):" -ForegroundColor DarkGray
     $IconFiles | ForEach-Object { Write-Host "   - $_" -ForegroundColor DarkGray }
