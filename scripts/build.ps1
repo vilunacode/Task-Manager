@@ -158,7 +158,7 @@ Write-Host ">> EXE wird erstellt (kann einige Minuten dauern)..." -ForegroundCol
 Write-Host ""
 
 & $PythonCmd -m PyInstaller app.py `
-    --onefile `
+    --onedir `
     --name $AppName `
     --add-data "templates;templates" `
     --add-data "static;static" `
@@ -181,14 +181,16 @@ if ($IcoForBuild) { Remove-Item $IcoForBuild -ErrorAction SilentlyContinue }
 
 # ── Ergebnis pruefen ──────────────────────────────────────
 Write-Host ""
-$ExePath = Join-Path $DistDir "$AppName.exe"
+$AppDir  = Join-Path $DistDir $AppName
+$ExePath = Join-Path $AppDir "$AppName.exe"
 
 if (Test-Path $ExePath) {
-    $SizeMB = [math]::Round((Get-Item $ExePath).Length / 1MB, 1)
+    $DirSizeMB = [math]::Round((Get-ChildItem $AppDir -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
     Write-Host "============================================" -ForegroundColor Green
-    Write-Host "  EXE erfolgreich erstellt!" -ForegroundColor Green
-    Write-Host "  Pfad : $((Resolve-Path $ExePath).Path)" -ForegroundColor Green
-    Write-Host "  Groesse: $SizeMB MB" -ForegroundColor Green
+    Write-Host "  App-Ordner erfolgreich erstellt!" -ForegroundColor Green
+    Write-Host "  Ordner : $((Resolve-Path $AppDir).Path)" -ForegroundColor Green
+    Write-Host "  Groesse: $DirSizeMB MB" -ForegroundColor Green
+    Write-Host "  Deploy : Gesamten Ordner auf den Server kopieren" -ForegroundColor Green
     Write-Host "============================================" -ForegroundColor Green
 } else {
     Write-Host "============================================" -ForegroundColor Red
