@@ -1076,6 +1076,22 @@ def is_due_today(value: str | None) -> bool:
     return due_dt.date() == datetime.now().date()
 
 
+def is_overdue(value: str | None, status: str | None = None) -> bool:
+    if not value or status == STATUS_CLOSED:
+        return False
+    raw = value.strip()
+    if not raw:
+        return False
+    has_time = bool(re.search(r"\d{2}:\d{2}", raw))
+    normalized = normalize_datetime_value(raw)
+    if not normalized:
+        return False
+    due_dt = datetime.fromisoformat(normalized)
+    if has_time:
+        return due_dt < datetime.now()
+    return due_dt.date() < datetime.now().date()
+
+
 def make_initials_from_username(username: str) -> str:
     letters_only = re.sub(r"[^A-Za-z0-9]", "", username.upper())
     if not letters_only:
@@ -2042,6 +2058,7 @@ def inject_helpers():
         "due_date_input_value": format_due_date_for_input,
         "due_time_input_value": format_due_time_for_input,
         "is_due_today": is_due_today,
+        "is_overdue": is_overdue,
         "app_settings": settings,
         "tone_options": sorted(TONE_OPTIONS.keys()),
         "closed_task_count": closed_task_count,
@@ -2592,6 +2609,7 @@ def overview_tasks_api():
                 "due_date": task.get("due_date", "") or "",
                 "due_date_display": format_datetime_for_display(task["due_date"]),
                 "due_today": is_due_today(task.get("due_date")),
+                "overdue": is_overdue(task.get("due_date"), task.get("status")),
                 "priority": int(task.get("priority") or DEFAULT_TASK_PRIORITY),
                 "assignees": task["assignees"],
                 "description": task.get("description", "") or "",
@@ -2648,6 +2666,7 @@ def dashboard_tasks_api():
                 "assignees": task["assignees"],
                 "assigned_to_me": assigned_to_me,
                 "due_today": is_due_today(task.get("due_date")),
+                "overdue": is_overdue(task.get("due_date"), task.get("status")),
                 "task_read_only": task_read_only,
                 "can_drag": can_drag,
                 "can_assign": bool(task["status"] != STATUS_CLOSED and can_assign_members),

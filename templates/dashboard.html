@@ -44,12 +44,13 @@
         {% for task in tasks %}
         {% set assigned_to_me = (task['assignees'] | selectattr('id', 'equalto', user['id']) | list | length > 0) %}
         {% set due_today = is_due_today(task['due_date']) %}
+        {% set overdue = is_overdue(task['due_date'], task['status']) %}
         {% set can_write_task = user['is_admin'] or task['created_by'] == user['id'] or task['id'] in editable_task_ids %}
         {% set can_assign_members = user['is_admin'] or task['created_by'] == user['id'] %}
         {% set task_read_only = task['status'] == 'closed' or not can_write_task %}
         {% set open_url = url_for('task_detail', task_id=task['id']) %}
         <div
-          class="task-card {{ 'task-assigned-to-me' if assigned_to_me else '' }} {{ 'task-due-today' if due_today else '' }} {{ 'draggable-task' if (user['is_admin'] or task['id'] in editable_task_ids) else '' }} {{ 'assignee-drop-enabled' if (task['status'] != 'closed' and can_assign_members) else '' }}"
+          class="task-card {{ 'task-assigned-to-me' if assigned_to_me else '' }} {{ 'task-overdue' if overdue else ('task-due-today' if due_today else '') }} {{ 'draggable-task' if (user['is_admin'] or task['id'] in editable_task_ids) else '' }} {{ 'assignee-drop-enabled' if (task['status'] != 'closed' and can_assign_members) else '' }}"
           data-open-href="{{ open_url }}"
           data-task-id="{{ task['id'] }}"
           data-current-status="{{ status }}"
@@ -65,7 +66,9 @@
         >
           <span class="task-priority-corner priority-{{ task['priority'] or 3 }}">{{ task['priority'] or 3 }}</span>
           <strong>{{ task['title'] }}</strong>
-          {% if due_today %}
+          {% if overdue %}
+          <span class="overdue-chip">Überfällig</span>
+          {% elif due_today %}
           <span class="due-today-chip">Heute fällig</span>
           {% endif %}
           <div class="task-card-meta">
@@ -377,7 +380,9 @@
     };
 
     const renderCardInner = (card, task) => {
-      const dueChip = task.due_today ? '<span class="due-today-chip">Heute fällig</span>' : "";
+      const dueChip = task.overdue
+        ? '<span class="overdue-chip">Überfällig</span>'
+        : (task.due_today ? '<span class="due-today-chip">Heute fällig</span>' : "");
       const priorityValueRaw = Number(task.priority || 3);
       const priorityValue = Number.isFinite(priorityValueRaw) ? Math.max(1, Math.min(5, priorityValueRaw)) : 3;
       const priorityCorner = `<span class="task-priority-corner priority-${priorityValue}">${priorityValue}</span>`;
@@ -437,7 +442,9 @@
       if (task.assigned_to_me) {
         card.classList.add("task-assigned-to-me");
       }
-      if (task.due_today) {
+      if (task.overdue) {
+        card.classList.add("task-overdue");
+      } else if (task.due_today) {
         card.classList.add("task-due-today");
       }
       if (task.can_drag) {

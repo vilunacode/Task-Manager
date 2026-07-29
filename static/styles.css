@@ -897,6 +897,29 @@ body[data-theme="dark"] .task-due-today {
   letter-spacing: 0.2px;
 }
 
+.task-overdue {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.24);
+  background: linear-gradient(180deg, #fff1f1 0%, #ffffff 100%);
+}
+
+body[data-theme="dark"] .task-overdue {
+  background: linear-gradient(180deg, rgba(153, 27, 27, 0.28) 0%, rgba(26, 39, 56, 1) 100%);
+}
+
+.overdue-chip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
 .task-priority-chip {
   display: inline-flex;
   align-items: center;
@@ -1944,6 +1967,16 @@ body[data-theme="dark"] .overview-task-card {
 
 body[data-theme="dark"] .overview-task-card.task-due-today {
   background: linear-gradient(180deg, rgba(153, 95, 29, 0.24) 0%, rgba(26, 39, 56, 1) 100%);
+}
+
+.overview-task-card.task-overdue {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.24);
+  background: linear-gradient(180deg, #fff1f1 0%, #ffffff 100%);
+}
+
+body[data-theme="dark"] .overview-task-card.task-overdue {
+  background: linear-gradient(180deg, rgba(153, 27, 27, 0.28) 0%, rgba(26, 39, 56, 1) 100%);
 }
 
 .new-task-pop {

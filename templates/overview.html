@@ -26,7 +26,8 @@
           {% if tasks %}
             {% for task in tasks %}
             {% set due_today = is_due_today(task['due_date']) %}
-            <div class="overview-task-card {{ 'task-due-today' if due_today else '' }}"
+            {% set overdue = is_overdue(task['due_date'], task['status']) %}
+            <div class="overview-task-card {{ 'task-overdue' if overdue else ('task-due-today' if due_today else '') }}"
               data-task-id="{{ task['id'] }}"
               data-created-at="{{ task['created_at'] }}"
               data-updated-at="{{ task['updated_at'] or '' }}"
@@ -43,7 +44,9 @@
             >
               <span class="task-priority-corner priority-{{ task['priority'] or 3 }}">{{ task['priority'] or 3 }}</span>
               <strong>{{ task['title'] }}</strong>
-              {% if due_today %}
+              {% if overdue %}
+              <span class="overdue-chip">Überfällig</span>
+              {% elif due_today %}
               <span class="due-today-chip">Heute fällig</span>
               {% endif %}
               <small>Fällig: {{ format_datetime(task['due_date']) }}</small>
@@ -204,7 +207,8 @@
     const createTaskCard = (task) => {
       const card = document.createElement("div");
       card.className = "overview-task-card new-task-pop";
-      card.classList.toggle("task-due-today", Boolean(task.due_today));
+      card.classList.toggle("task-overdue", Boolean(task.overdue));
+      card.classList.toggle("task-due-today", !task.overdue && Boolean(task.due_today));
       scheduleNewTaskPopRemoval(card, Date.parse(task.created_at || ""));
       card.dataset.taskId = String(task.id);
       card.dataset.createdAt = task.created_at || "";
@@ -225,7 +229,12 @@
       title.textContent = task.title || "(Ohne Titel)";
       card.appendChild(title);
 
-      if (task.due_today) {
+      if (task.overdue) {
+        const dueChip = document.createElement("span");
+        dueChip.className = "overdue-chip";
+        dueChip.textContent = "Überfällig";
+        card.appendChild(dueChip);
+      } else if (task.due_today) {
         const dueChip = document.createElement("span");
         dueChip.className = "due-today-chip";
         dueChip.textContent = "Heute fällig";
@@ -253,16 +262,26 @@
       card.dataset.title = task.title || card.dataset.title || "";
       applyTooltipData(card, task);
 
-      card.classList.toggle("task-due-today", Boolean(task.due_today));
+      card.classList.toggle("task-overdue", Boolean(task.overdue));
+      card.classList.toggle("task-due-today", !task.overdue && Boolean(task.due_today));
 
       const title = card.querySelector("strong");
       if (title) {
         title.textContent = task.title || "(Ohne Titel)";
       }
 
-      let dueChip = card.querySelector(".due-today-chip");
-      if (task.due_today) {
-        if (!dueChip) {
+      let dueChip = card.querySelector(".due-today-chip, .overdue-chip");
+      if (task.overdue) {
+        if (!dueChip || !dueChip.classList.contains("overdue-chip")) {
+          dueChip?.remove();
+          dueChip = document.createElement("span");
+          dueChip.className = "overdue-chip";
+          dueChip.textContent = "Überfällig";
+          title?.insertAdjacentElement("afterend", dueChip);
+        }
+      } else if (task.due_today) {
+        if (!dueChip || !dueChip.classList.contains("due-today-chip")) {
+          dueChip?.remove();
           dueChip = document.createElement("span");
           dueChip.className = "due-today-chip";
           dueChip.textContent = "Heute fällig";
