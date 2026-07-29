@@ -173,8 +173,10 @@ body[data-nav-collapsed="true"] .nav-collapse-icon--close { display: none; }
 
 .nav {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
-  gap: 14px;
+  gap: 8px 14px;
 }
 
 .nav a {
@@ -546,9 +548,11 @@ body[data-theme="dark"] .link-btn:hover {
 
 .section-head {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
+  row-gap: 8px;
 }
 
 .badge {
@@ -1205,6 +1209,10 @@ body[data-theme="dark"] .flash.error {
   overflow-x: auto;
 }
 
+.table-wrap table {
+  min-width: max-content;
+}
+
 .task-dialog {
   width: min(760px, 95vw);
   border: 1px solid var(--line);
@@ -1262,7 +1270,7 @@ body[data-theme="dark"] .comment-card {
 
 .compact-actions {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
 }
@@ -1714,7 +1722,7 @@ body[data-theme="dark"] .day-dialog-event-item {
 }
 
 .overview-page {
-  width: min(var(--overview-general-width, 1720px), 98vw);
+  width: min(var(--overview-general-width, 1720px), 100%);
   min-height: var(--overview-general-min-height, 0px);
   margin: 0 auto;
 }
@@ -1949,7 +1957,7 @@ body[data-theme="dark"] .overview-column[data-status="closed"] {
   padding: 8px 8px 8px;
   display: grid;
   gap: 4px;
-  width: var(--overview-task-card-width, 220px);
+  width: min(var(--overview-task-card-width, 220px), 100%);
   min-height: var(--overview-task-card-min-height, 94px);
   position: relative;
   align-content: start;
@@ -2117,13 +2125,16 @@ td {
 
   .user-sidebar {
     position: static;
+    width: 100%;
+    justify-self: stretch;
   }
 
   .board {
     grid-template-columns: 1fr;
   }
 
-  .two-columns {
+  .two-columns,
+  .three-columns {
     grid-template-columns: 1fr;
   }
 
@@ -2149,6 +2160,43 @@ td {
     grid-template-columns: 1fr;
   }
 
+  .setup-features {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar-inner {
+    grid-template-columns: 1fr;
+    row-gap: 10px;
+    padding: 10px 0;
+  }
+
+  .topbar-inner .brand {
+    justify-self: center;
+  }
+
+  .topbar-actions {
+    justify-self: center;
+  }
+
+  .topbar-collapsible {
+    max-height: 300px;
+  }
+
+}
+
+@media (max-width: 480px) {
+  .container {
+    width: min(var(--general-container-width, 1760px), 94vw);
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  .setup-hero,
+  .setup-form-card {
+    padding: 18px;
+  }
 }
 
 /* ── Setup page ─────────────────────────────────────────── */
@@ -2295,6 +2343,8 @@ td {
   display: flex;
   gap: 4px;
   padding: 0 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .onboarding-tab {

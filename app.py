@@ -1066,14 +1066,14 @@ def format_due_time_for_input(value: str | None) -> str:
     return time_part
 
 
-def is_due_today(value: str | None) -> bool:
-    if not value:
+def is_due_today(value: str | None, status: str | None = None) -> bool:
+    if not value or status == STATUS_CLOSED:
         return False
     normalized = normalize_datetime_value(value)
     if not normalized:
         return False
     due_dt = datetime.fromisoformat(normalized)
-    return due_dt.date() == datetime.now().date()
+    return due_dt.date() == datetime.now(APP_TIMEZONE).date()
 
 
 def is_overdue(value: str | None, status: str | None = None) -> bool:
@@ -1087,9 +1087,10 @@ def is_overdue(value: str | None, status: str | None = None) -> bool:
     if not normalized:
         return False
     due_dt = datetime.fromisoformat(normalized)
+    now_local = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
     if has_time:
-        return due_dt < datetime.now()
-    return due_dt.date() < datetime.now().date()
+        return due_dt < now_local
+    return due_dt.date() < now_local.date()
 
 
 def make_initials_from_username(username: str) -> str:
@@ -2608,7 +2609,7 @@ def overview_tasks_api():
                 "created_at_display": format_system_datetime_for_display(task["created_at"]),
                 "due_date": task.get("due_date", "") or "",
                 "due_date_display": format_datetime_for_display(task["due_date"]),
-                "due_today": is_due_today(task.get("due_date")),
+                "due_today": is_due_today(task.get("due_date"), task.get("status")),
                 "overdue": is_overdue(task.get("due_date"), task.get("status")),
                 "priority": int(task.get("priority") or DEFAULT_TASK_PRIORITY),
                 "assignees": task["assignees"],
@@ -2665,7 +2666,7 @@ def dashboard_tasks_api():
                 "creator_name": task.get("creator_name", ""),
                 "assignees": task["assignees"],
                 "assigned_to_me": assigned_to_me,
-                "due_today": is_due_today(task.get("due_date")),
+                "due_today": is_due_today(task.get("due_date"), task.get("status")),
                 "overdue": is_overdue(task.get("due_date"), task.get("status")),
                 "task_read_only": task_read_only,
                 "can_drag": can_drag,

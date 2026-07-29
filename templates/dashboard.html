@@ -43,7 +43,7 @@
       {% if tasks %}
         {% for task in tasks %}
         {% set assigned_to_me = (task['assignees'] | selectattr('id', 'equalto', user['id']) | list | length > 0) %}
-        {% set due_today = is_due_today(task['due_date']) %}
+        {% set due_today = is_due_today(task['due_date'], task['status']) %}
         {% set overdue = is_overdue(task['due_date'], task['status']) %}
         {% set can_write_task = user['is_admin'] or task['created_by'] == user['id'] or task['id'] in editable_task_ids %}
         {% set can_assign_members = user['is_admin'] or task['created_by'] == user['id'] %}
@@ -608,7 +608,7 @@
       tooltip.style.left = "";
       tooltip.style.right = "";
 
-      const tipW = 280;
+      const tipW = Math.min(280, vw - 16);
       const spaceRight = vw - rect.right;
       const spaceLeft = rect.left;
 
@@ -620,6 +620,7 @@
       } else {
         left = Math.max(8, rect.left);
       }
+      left = Math.max(8, Math.min(left, vw - tipW - 8));
 
       let top = rect.top;
       tooltip.style.width = tipW + "px";

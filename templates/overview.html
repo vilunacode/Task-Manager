@@ -25,7 +25,7 @@
         <div class="overview-task-list">
           {% if tasks %}
             {% for task in tasks %}
-            {% set due_today = is_due_today(task['due_date']) %}
+            {% set due_today = is_due_today(task['due_date'], task['status']) %}
             {% set overdue = is_overdue(task['due_date'], task['status']) %}
             <div class="overview-task-card {{ 'task-overdue' if overdue else ('task-due-today' if due_today else '') }}"
               data-task-id="{{ task['id'] }}"
@@ -49,7 +49,9 @@
               {% elif due_today %}
               <span class="due-today-chip">Heute fällig</span>
               {% endif %}
+              {% if task['due_date'] %}
               <small>Fällig: {{ format_datetime(task['due_date']) }}</small>
+              {% endif %}
               <div class="overview-assignees">
                 {% if task['assignees'] %}
                   {% for assignee in task['assignees'] %}
@@ -241,10 +243,12 @@
         card.appendChild(dueChip);
       }
 
-      const due = document.createElement("small");
-      due.className = "overview-due-line";
-      due.textContent = `Fällig: ${task.due_date_display || "-"}`;
-      card.appendChild(due);
+      if (task.due_date) {
+        const due = document.createElement("small");
+        due.className = "overview-due-line";
+        due.textContent = `Fällig: ${task.due_date_display || "-"}`;
+        card.appendChild(due);
+      }
 
       const assigneesWrap = document.createElement("div");
       assigneesWrap.className = "overview-assignees";
@@ -291,9 +295,16 @@
         dueChip.remove();
       }
 
-      const due = card.querySelector(".overview-due-line") || card.querySelector("small");
-      if (due) {
+      let due = card.querySelector(".overview-due-line") || card.querySelector("small");
+      if (task.due_date) {
+        if (!due) {
+          due = document.createElement("small");
+          due.className = "overview-due-line";
+          card.appendChild(due);
+        }
         due.textContent = `Fällig: ${task.due_date_display || "-"}`;
+      } else if (due) {
+        due.remove();
       }
 
       const assigneesWrap = card.querySelector(".overview-assignees");
@@ -507,7 +518,7 @@
       const rect = card.getBoundingClientRect();
       const vw = window.innerWidth;
       const vh = window.innerHeight;
-      const tipW = 280;
+      const tipW = Math.min(280, vw - 16);
 
       tooltip.hidden = false;
       tooltip.style.width = tipW + "px";
@@ -515,6 +526,7 @@
       const spaceRight = vw - rect.right;
       let left = spaceRight >= tipW + 12 ? rect.right + 8 : rect.left - tipW - 8;
       if (left < 8) left = Math.max(8, rect.left);
+      left = Math.max(8, Math.min(left, vw - tipW - 8));
       tooltip.style.left = left + "px";
       tooltip.style.top = rect.top + "px";
 
