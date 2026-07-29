@@ -1936,6 +1936,16 @@ body[data-theme="dark"] .overview-task-card {
   background: #1a2738;
 }
 
+.overview-task-card.task-due-today {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.22);
+  background: linear-gradient(180deg, #fffaf0 0%, #ffffff 100%);
+}
+
+body[data-theme="dark"] .overview-task-card.task-due-today {
+  background: linear-gradient(180deg, rgba(153, 95, 29, 0.24) 0%, rgba(26, 39, 56, 1) 100%);
+}
+
 .new-task-pop {
   animation: popInTask 0.6s ease-out;
   border-color: #0f766e;

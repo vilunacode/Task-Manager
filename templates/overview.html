@@ -25,7 +25,8 @@
         <div class="overview-task-list">
           {% if tasks %}
             {% for task in tasks %}
-            <div class="overview-task-card"
+            {% set due_today = is_due_today(task['due_date']) %}
+            <div class="overview-task-card {{ 'task-due-today' if due_today else '' }}"
               data-task-id="{{ task['id'] }}"
               data-created-at="{{ task['created_at'] }}"
               data-updated-at="{{ task['updated_at'] or '' }}"
@@ -42,6 +43,9 @@
             >
               <span class="task-priority-corner priority-{{ task['priority'] or 3 }}">{{ task['priority'] or 3 }}</span>
               <strong>{{ task['title'] }}</strong>
+              {% if due_today %}
+              <span class="due-today-chip">Heute fällig</span>
+              {% endif %}
               <small>Fällig: {{ format_datetime(task['due_date']) }}</small>
               <div class="overview-assignees">
                 {% if task['assignees'] %}
@@ -186,9 +190,22 @@
       card.dataset.createdAtDisplay = task.created_at_display || card.dataset.createdAtDisplay || "";
     };
 
+    const scheduleNewTaskPopRemoval = (card, createdAtMs) => {
+      const remaining = Number.isFinite(createdAtMs)
+        ? FRESH_WINDOW_MS - (Date.now() - createdAtMs)
+        : FRESH_WINDOW_MS;
+      if (remaining <= 0) {
+        card.classList.remove("new-task-pop");
+        return;
+      }
+      setTimeout(() => card.classList.remove("new-task-pop"), remaining);
+    };
+
     const createTaskCard = (task) => {
       const card = document.createElement("div");
       card.className = "overview-task-card new-task-pop";
+      card.classList.toggle("task-due-today", Boolean(task.due_today));
+      scheduleNewTaskPopRemoval(card, Date.parse(task.created_at || ""));
       card.dataset.taskId = String(task.id);
       card.dataset.createdAt = task.created_at || "";
       card.dataset.updatedAt = task.updated_at || "";
@@ -207,6 +224,13 @@
       const title = document.createElement("strong");
       title.textContent = task.title || "(Ohne Titel)";
       card.appendChild(title);
+
+      if (task.due_today) {
+        const dueChip = document.createElement("span");
+        dueChip.className = "due-today-chip";
+        dueChip.textContent = "Heute fällig";
+        card.appendChild(dueChip);
+      }
 
       const due = document.createElement("small");
       due.className = "overview-due-line";
@@ -229,9 +253,23 @@
       card.dataset.title = task.title || card.dataset.title || "";
       applyTooltipData(card, task);
 
+      card.classList.toggle("task-due-today", Boolean(task.due_today));
+
       const title = card.querySelector("strong");
       if (title) {
         title.textContent = task.title || "(Ohne Titel)";
+      }
+
+      let dueChip = card.querySelector(".due-today-chip");
+      if (task.due_today) {
+        if (!dueChip) {
+          dueChip = document.createElement("span");
+          dueChip.className = "due-today-chip";
+          dueChip.textContent = "Heute fällig";
+          title?.insertAdjacentElement("afterend", dueChip);
+        }
+      } else if (dueChip) {
+        dueChip.remove();
       }
 
       const due = card.querySelector(".overview-due-line") || card.querySelector("small");
@@ -270,7 +308,7 @@
       if (isFresh && isNewForViewer) {
         hasFresh = true;
         card.classList.add("new-task-pop");
-
+        scheduleNewTaskPopRemoval(card, createdAtMs);
       }
 
       seen.add(taskId);
