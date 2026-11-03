@@ -16,9 +16,7 @@
         <a href="{{ url_for('dashboard', filter='mine') }}" class="chip {{ 'active' if filter_mode == 'mine' else '' }}">Meine Tasks</a>
         <a href="{{ url_for('dashboard', filter='pings', ping_tab=ping_tab) }}" class="chip {{ 'active' if filter_mode == 'pings' else '' }} ping-chip">
           Pings
-          {% if ping_unread_count and ping_unread_count > 0 %}
-          <span class="ping-notification">{{ ping_unread_count }}</span>
-          {% endif %}
+          <span class="ping-notification" id="ping-notification" {% if not ping_unread_count or ping_unread_count <= 0 %}hidden{% endif %}>{{ ping_unread_count or 0 }}</span>
         </a>
         {% endif %}
       </div>
@@ -845,6 +843,13 @@
       bindTaskCard(card);
     });
 
+    const pingBadge = document.getElementById("ping-notification");
+    const updatePingBadge = (count) => {
+      if (!pingBadge || typeof count !== "number") return;
+      pingBadge.textContent = String(count);
+      pingBadge.hidden = count <= 0;
+    };
+
     const pollAndSyncDashboard = async () => {
       try {
         const response = await fetch(`{{ url_for('dashboard_tasks_api') }}?filter={{ filter_mode }}&ping_tab={{ ping_tab }}`, {
@@ -856,6 +861,7 @@
         }
 
         const data = await response.json();
+        updatePingBadge(data.ping_unread_count);
         const tasks = Array.isArray(data.tasks) ? data.tasks : [];
         const serverIds = new Set();
 

@@ -2822,7 +2822,10 @@ def dashboard_tasks_api():
             }
         )
 
-    return jsonify({"tasks": payload})
+    # Sent with every poll so the "Pings" badge updates live without a reload.
+    ping_unread_count = 0 if user["role"] == ROLE_VIEWER and not user["is_admin"] else unread_ping_count_for_user(user)
+
+    return jsonify({"tasks": payload, "ping_unread_count": ping_unread_count})
 
 
 @app.route("/calendar", methods=["GET", "POST"])

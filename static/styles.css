@@ -627,6 +627,10 @@ body[data-theme="dark"] .link-btn:hover {
   background: #dc2626;
 }
 
+.ping-notification[hidden] {
+  display: none;
+}
+
 body[data-theme="dark"] .ping-notification {
   background: #ef4444;
   color: #fff;
