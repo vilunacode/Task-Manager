@@ -28,6 +28,7 @@
 {% if user['is_admin'] %}
 <section class="card">
   <h2>Admin-Einstellungen</h2>
+  <p class="muted" style="margin:-4px 0 14px;">Installierte Version: <strong>{{ app_version }}</strong></p>
   <form method="post" class="form-grid two-columns">
     <input type="hidden" name="action" value="admin-settings">
 

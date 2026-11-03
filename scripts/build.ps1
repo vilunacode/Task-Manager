@@ -124,13 +124,23 @@ if ($IconExt -eq ".png") {
 }
 $IcoForBuild = "_build_icon_temp.ico"
 
-# ── version.txt mit App-Name generieren ──────────────────
+# ── Versionsnummer aus Datei VERSION lesen ───────────────
+$AppVersion = "0.0.0"
+if (Test-Path "VERSION") {
+    $AppVersion = (Get-Content "VERSION" | Where-Object { $_.Trim() -ne "" } | Select-Object -First 1).Trim()
+}
+$VersionParts = @($AppVersion.Split(".") | ForEach-Object { [int]($_ -replace "[^0-9]", "0") })
+while ($VersionParts.Count -lt 4) { $VersionParts += 0 }
+$VersionTuple = ($VersionParts[0..3] -join ", ")
+Write-Host "   Version  : $AppVersion" -ForegroundColor Green
+
+# ── version.txt mit App-Name und Version generieren ──────
 $VersionFile = "version.txt"
 $VersionContent = @"
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 0, 0, 0),
-    prodvers=(1, 0, 0, 0),
+    filevers=($VersionTuple),
+    prodvers=($VersionTuple),
   ),
   kids=[
     StringFileInfo([
@@ -139,9 +149,9 @@ VSVersionInfo(
         [
           StringStruct(u'CompanyName', u'vilunacode'),
           StringStruct(u'FileDescription', u'$AppName'),
-          StringStruct(u'FileVersion', u'1.0.0'),
+          StringStruct(u'FileVersion', u'$AppVersion'),
           StringStruct(u'ProductName', u'$AppName'),
-          StringStruct(u'ProductVersion', u'1.0.0'),
+          StringStruct(u'ProductVersion', u'$AppVersion'),
           StringStruct(u'LegalCopyright', u'Made by vilunacode'),
         ]
       )
@@ -163,6 +173,7 @@ Write-Host ""
     --add-data "templates;templates" `
     --add-data "static;static" `
     --add-data "config.ini;." `
+    --add-data "VERSION;." `
     --add-data "$TrayIcon;." `
     --hidden-import zoneinfo `
     --collect-data tzdata `
@@ -185,10 +196,25 @@ $AppDir  = Join-Path $DistDir $AppName
 $ExePath = Join-Path $AppDir "$AppName.exe"
 
 if (Test-Path $ExePath) {
+    # Versionsdatei direkt neben die EXE legen (auch ohne laufende Webseite auffindbar)
+    $BuildDate = Get-Date -Format "yyyy-MM-dd HH:mm"
+    $GitCommit = ""
+    try { $GitCommit = (git rev-parse --short HEAD 2>$null) } catch { }
+    $VersionInfo = @(
+        "$AppVersion",
+        "",
+        "App     : $AppName",
+        "Version : $AppVersion",
+        "Build   : $BuildDate",
+        "Commit  : $GitCommit"
+    )
+    Set-Content -Path (Join-Path $AppDir "VERSION.txt") -Value $VersionInfo -Encoding UTF8
+
     $DirSizeMB = [math]::Round((Get-ChildItem $AppDir -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
     Write-Host "============================================" -ForegroundColor Green
     Write-Host "  App-Ordner erfolgreich erstellt!" -ForegroundColor Green
     Write-Host "  Ordner : $((Resolve-Path $AppDir).Path)" -ForegroundColor Green
+    Write-Host "  Version: $AppVersion" -ForegroundColor Green
     Write-Host "  Groesse: $DirSizeMB MB" -ForegroundColor Green
     Write-Host "  Deploy : Gesamten Ordner auf den Server kopieren" -ForegroundColor Green
     Write-Host "============================================" -ForegroundColor Green
