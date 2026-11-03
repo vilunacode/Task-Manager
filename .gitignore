@@ -7,3 +7,6 @@ dist/
 build/
 *.spec
 *.exe
+
+# Hochgeladenes Favicon pro Instanz (liegt neben config.ini)
+/favicon.*

@@ -2204,6 +2204,14 @@ def closed_task_count_for_admin(user) -> int:
     return int(row["cnt"]) if row is not None else 0
 
 
+def favicon_version() -> int:
+    """Ändert sich bei jedem Upload, damit Browser kein altes Favicon aus dem Cache zeigen."""
+    try:
+        return int(os.path.getmtime(favicon_path()))
+    except OSError:
+        return 0
+
+
 @app.context_processor
 def inject_helpers():
     user = current_user()
@@ -2228,6 +2236,7 @@ def inject_helpers():
         "is_overdue": is_overdue,
         "app_settings": settings,
         "app_version": APP_VERSION,
+        "favicon_version": favicon_version(),
         "tone_options": sorted(TONE_OPTIONS.keys()),
         "closed_task_count": closed_task_count,
         "custom_role_css_rules": custom_role_css_rules(),
@@ -2235,18 +2244,25 @@ def inject_helpers():
     }
 
 
+def favicon_path() -> str:
+    """Pfad des aktiven Favicons: eigenes Upload pro Instanz, sonst Standard-Icon."""
+    filename = app_settings().get("favicon_filename", "")
+    if filename:
+        # BASE_DIR = Ordner der Instanz (EXE/config.ini); static nur für Uploads vor v1.2.2
+        for directory in (BASE_DIR, app.static_folder):
+            path = os.path.join(directory, filename)
+            if os.path.exists(path):
+                return path
+    return os.path.join(app.static_folder, "favicon.png")
+
+
 @app.route("/favicon.ico")
 @app.route("/favicon.png")
 def serve_favicon():
-    settings = app_settings()
-    filename = settings.get("favicon_filename", "") or "favicon.png"
-    filepath = os.path.join(app.static_folder, filename)
-    if not os.path.exists(filepath):
-        filename = "favicon.png"
-        filepath = os.path.join(app.static_folder, filename)
+    filepath = favicon_path()
     if not os.path.exists(filepath):
         return "", 404
-    response = send_from_directory(app.static_folder, filename)
+    response = send_from_directory(os.path.dirname(filepath), os.path.basename(filepath))
     response.headers["Cache-Control"] = "no-cache, must-revalidate"
     return response
 
@@ -3176,12 +3192,12 @@ def settings_page():
 
             old_filename = app_settings().get("favicon_filename", "")
             if old_filename:
-                old_path = os.path.join(app.static_folder, old_filename)
+                old_path = os.path.join(BASE_DIR, old_filename)
                 if os.path.exists(old_path):
                     os.remove(old_path)
 
             new_filename = f"favicon.{ext}"
-            file.save(os.path.join(app.static_folder, new_filename))
+            file.save(os.path.join(BASE_DIR, new_filename))
             set_app_setting("favicon_filename", new_filename)
             flash("Favicon wurde gespeichert.", "success")
             return redirect(url_for("settings_page"))
@@ -3193,7 +3209,7 @@ def settings_page():
 
             filename = app_settings().get("favicon_filename", "")
             if filename:
-                path = os.path.join(app.static_folder, filename)
+                path = os.path.join(BASE_DIR, filename)
                 if os.path.exists(path):
                     os.remove(path)
                 set_app_setting("favicon_filename", "")

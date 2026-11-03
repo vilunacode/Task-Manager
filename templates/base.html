@@ -19,7 +19,7 @@
     }
     {% endfor %}
   </style>
-  <link rel="icon" href="/favicon.ico">
+  <link rel="icon" href="/favicon.ico?v={{ favicon_version }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body data-theme="{{ user['theme_mode'] if user and user['theme_mode'] in ('light', 'dark') else 'light' }}">
