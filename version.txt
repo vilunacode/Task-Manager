@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 2, 0, 0),
-    prodvers=(1, 2, 0, 0),
+    filevers=(1, 2, 1, 0),
+    prodvers=(1, 2, 1, 0),
   ),
   kids=[
     StringFileInfo([
@@ -10,9 +10,9 @@ VSVersionInfo(
         [
           StringStruct(u'CompanyName', u'vilunacode'),
           StringStruct(u'FileDescription', u'Ticket-System'),
-          StringStruct(u'FileVersion', u'1.2.0'),
+          StringStruct(u'FileVersion', u'1.2.1'),
           StringStruct(u'ProductName', u'Ticket-System'),
-          StringStruct(u'ProductVersion', u'1.2.0'),
+          StringStruct(u'ProductVersion', u'1.2.1'),
           StringStruct(u'LegalCopyright', u'Made by vilunacode'),
         ]
       )

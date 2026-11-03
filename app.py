@@ -5105,6 +5105,8 @@ if __name__ == "__main__":
             _tray_image,
             f"{_app_name} v{APP_VERSION} läuft",
             menu=pystray.Menu(
+                pystray.MenuItem(f"{_app_name} v{APP_VERSION}", None, enabled=False),
+                pystray.Menu.SEPARATOR,
                 pystray.MenuItem("Im Browser öffnen", _on_open),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem("Beenden", _on_stop),
