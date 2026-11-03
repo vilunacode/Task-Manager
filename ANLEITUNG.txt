@@ -110,6 +110,15 @@ F: Kann ich die EXE auf einem anderen PC nutzen?
 A: Ja. Die EXE einfach kopieren und starten. Keine Installation
    nötig. Die Datenbank (task_manager.db) liegt neben der EXE.
 
+F: Welche Version ist installiert?
+A: - Im App-Ordner (neben der EXE) liegt die Datei VERSION.txt.
+     Die erste Zeile ist die Versionsnummer. Funktioniert auch,
+     wenn die Webseite nicht erreichbar ist.
+   - Rechtsklick auf die EXE > Eigenschaften > Details.
+   - Als Admin in der App unter Einstellungen > Admin-Einstellungen.
+   Die Versionsnummer wird zentral in der Datei VERSION im
+   Projektordner gepflegt und beim Build automatisch übernommen.
+
 F: Auf welchem Port läuft die App?
 A: Standardmäßig Port 5000. Erreichbar unter:
    http://127.0.0.1:5000

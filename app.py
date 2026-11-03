@@ -29,6 +29,24 @@ if getattr(sys, "frozen", False):
 else:
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))
     _BUNDLE_DIR = BASE_DIR
+
+
+def _read_app_version() -> str:
+    """Liest die Versionsnummer aus der Datei VERSION (im Bundle oder neben der EXE)."""
+    for directory in (_BUNDLE_DIR, BASE_DIR):
+        for filename in ("VERSION", "VERSION.txt"):
+            try:
+                with open(os.path.join(directory, filename), encoding="utf-8") as fh:
+                    for line in fh:
+                        value = line.strip()
+                        if value:
+                            return value
+            except OSError:
+                continue
+    return "unbekannt"
+
+
+APP_VERSION = _read_app_version()
 DEFAULT_CONFIG_FILENAME = "config.ini"
 DEFAULT_DATABASE_FILENAME = "task_manager.db"
 SUPPORTED_DATABASE_DRIVERS = {"sqlite", "postgres", "postgresql", "mysql", "mariadb"}
@@ -2209,6 +2227,7 @@ def inject_helpers():
         "is_due_today": is_due_today,
         "is_overdue": is_overdue,
         "app_settings": settings,
+        "app_version": APP_VERSION,
         "tone_options": sorted(TONE_OPTIONS.keys()),
         "closed_task_count": closed_task_count,
         "custom_role_css_rules": custom_role_css_rules(),
@@ -5084,7 +5103,7 @@ if __name__ == "__main__":
         _tray_icon = pystray.Icon(
             _app_name,
             _tray_image,
-            f"{_app_name} läuft",
+            f"{_app_name} v{APP_VERSION} läuft",
             menu=pystray.Menu(
                 pystray.MenuItem("Im Browser öffnen", _on_open),
                 pystray.Menu.SEPARATOR,
@@ -5108,12 +5127,12 @@ if __name__ == "__main__":
             if ready:
                 messagebox.showinfo(
                     f"{_app_name} gestartet",
-                    f"Der Dienst wurde erfolgreich gestartet.\n\nWebseite erreichbar unter:\n{_url}",
+                    f"Der Dienst wurde erfolgreich gestartet.\n\nVersion: {APP_VERSION}\nWebseite erreichbar unter:\n{_url}",
                 )
             else:
                 messagebox.showerror(
                     "Fehler beim Starten",
-                    f"Der Dienst konnte nicht gestartet werden.\n\n"
+                    f"Der Dienst konnte nicht gestartet werden (Version {APP_VERSION}).\n\n"
                     f"Mögliche Ursache: Port {_port} ist bereits belegt.",
                 )
             root.destroy()
