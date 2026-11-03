@@ -357,6 +357,120 @@ def auto_reactivate_expired_inactive_users():
     )
 
 
+def repair_orphaned_references(db: sqlite3.Connection) -> dict[str, int]:
+    """Find and clean up references to rows that no longer exist (e.g. deleted users).
+
+    Runs on every start before the data migrations so that a single dangling
+    reference can never prevent the application from starting again.
+    Returns a summary {"table.column": number_of_fixed_rows}; it contains only
+    counts and never any personal data.
+    """
+    fixes: dict[str, int] = {}
+
+    def _track(label: str, count: int) -> None:
+        if count and count > 0:
+            fixes[label] = fixes.get(label, 0) + count
+
+    # 1) User references in tasks that have NO foreign key constraint in the DB
+    #    (columns added later via ALTER TABLE), so SQLite cannot check them itself.
+    task_columns = {row["name"] for row in db.execute("PRAGMA table_info(tasks)").fetchall()}
+    for column in ("assignee_id", "closed_by", "contact_person_user_id"):
+        if column in task_columns:
+            cur = db.execute(
+                f"""
+                UPDATE tasks SET {column} = NULL
+                WHERE {column} IS NOT NULL
+                  AND {column} NOT IN (SELECT id FROM users)
+                """
+            )
+            _track(f"tasks.{column}", cur.rowcount)
+
+    # tasks.created_by is NOT NULL -> hand orphaned tickets over to an admin
+    # (or, if there is none, to the oldest user) instead of deleting tickets.
+    successor = db.execute(
+        "SELECT id FROM users ORDER BY is_admin DESC, id ASC LIMIT 1"
+    ).fetchone()
+    if successor is not None:
+        cur = db.execute(
+            "UPDATE tasks SET created_by = ? WHERE created_by NOT IN (SELECT id FROM users)",
+            (successor["id"],),
+        )
+        _track("tasks.created_by", cur.rowcount)
+
+    # 2) Generic check of all declared foreign keys. Every violation is resolved
+    #    the same way the database would have done it if the parent row had been
+    #    deleted correctly (ON DELETE CASCADE -> remove row, SET NULL -> set NULL).
+    #    Tickets themselves are never deleted.
+    table_info_cache: dict[str, dict[str, bool]] = {}
+    fk_cache: dict[str, dict[int, list]] = {}
+    for _ in range(10):  # repeat: removing a row may orphan dependent rows
+        violations = db.execute("PRAGMA foreign_key_check").fetchall()
+        if not violations:
+            break
+        changed = False
+        for violation in violations:
+            table, rowid, fk_id = violation[0], violation[1], violation[3]
+            if rowid is None:
+                continue
+            if table not in fk_cache:
+                fk_map: dict[int, list] = {}
+                for fk in db.execute(f'PRAGMA foreign_key_list("{table}")').fetchall():
+                    fk_map.setdefault(fk["id"], []).append(fk)
+                fk_cache[table] = fk_map
+                table_info_cache[table] = {
+                    col["name"]: bool(col["notnull"]) or bool(col["pk"])
+                    for col in db.execute(f'PRAGMA table_info("{table}")').fetchall()
+                }
+            fk_rows = fk_cache[table].get(fk_id, [])
+            if not fk_rows:
+                continue
+            columns = [fk["from"] for fk in fk_rows]
+            on_delete = (fk_rows[0]["on_delete"] or "").upper()
+            nullable = all(not table_info_cache[table].get(col, True) for col in columns)
+            label = f"{table}.{','.join(columns)}"
+
+            delete_row = table != "tasks" and (on_delete == "CASCADE" or not nullable)
+            if delete_row:
+                cur = db.execute(f'DELETE FROM "{table}" WHERE rowid = ?', (rowid,))
+            elif nullable:
+                assignments = ", ".join(f'"{col}" = NULL' for col in columns)
+                cur = db.execute(f'UPDATE "{table}" SET {assignments} WHERE rowid = ?', (rowid,))
+            else:
+                continue
+            if cur.rowcount:
+                changed = True
+                _track(label, cur.rowcount)
+        if not changed:
+            break
+
+    remaining = db.execute("PRAGMA foreign_key_check").fetchall()
+    if remaining:
+        print(
+            f"[DB-Prüfung] WARNUNG: {len(remaining)} ungültige Verweise konnten nicht automatisch bereinigt werden.",
+            flush=True,
+        )
+
+    if fixes:
+        summary = ", ".join(f"{label}: {count}" for label, count in sorted(fixes.items()))
+        print(f"[DB-Prüfung] Ungültige Verweise bereinigt -> {summary}", flush=True)
+        db.execute(
+            """
+            INSERT INTO activity_log (actor_id, actor_name, event_type, description, task_id, task_title, details, created_at)
+            VALUES (NULL, 'System', 'db_repair', ?, NULL, NULL, ?, ?)
+            """,
+            (
+                "Datenbankprüfung beim Start: ungültige Verweise wurden automatisch bereinigt.",
+                summary,
+                now_iso(),
+            ),
+        )
+    else:
+        print("[DB-Prüfung] Keine ungültigen Verweise gefunden.", flush=True)
+
+    db.commit()
+    return fixes
+
+
 def init_db() -> None:
     db = get_db()
     db.executescript(
@@ -636,6 +750,10 @@ def init_db() -> None:
         db.execute("CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id)")
         db.execute("PRAGMA foreign_keys = ON")
 
+    # Integrity check on every start: clean up dangling references (e.g. to
+    # deleted users) before the data migrations below rely on them.
+    repair_orphaned_references(db)
+
     db.execute(
         """
         UPDATE tasks
@@ -737,6 +855,7 @@ def init_db() -> None:
         SELECT id, assignee_id
         FROM tasks
         WHERE assignee_id IS NOT NULL
+          AND assignee_id IN (SELECT id FROM users)
         """
     )
 
@@ -751,6 +870,7 @@ def init_db() -> None:
         INSERT OR IGNORE INTO task_contact_persons (task_id, user_id)
         SELECT id, contact_person_user_id FROM tasks
         WHERE contact_person_user_id IS NOT NULL
+          AND contact_person_user_id IN (SELECT id FROM users)
         """
     )
 
@@ -1965,6 +2085,34 @@ def sync_task_primary_assignee(task_id: int):
     execute("UPDATE tasks SET assignee_id = ? WHERE id = ?", (primary_assignee_id, task_id))
 
 
+def delete_user_with_references(target_id, successor_id) -> None:
+    """Delete a user and remove/hand over every reference to them, so that no
+    dangling user IDs remain in the database."""
+    assigned_rows = query_all(
+        "SELECT DISTINCT task_id FROM task_assignees WHERE user_id = ?",
+        (target_id,),
+    )
+    affected_task_ids = {row["task_id"] for row in assigned_rows}
+
+    # tasks.created_by uses ON DELETE RESTRICT, so hand over ownership first.
+    execute("UPDATE tasks SET created_by = ? WHERE created_by = ?", (successor_id, target_id))
+
+    execute("DELETE FROM task_assignees WHERE user_id = ?", (target_id,))
+    execute("DELETE FROM task_contact_persons WHERE user_id = ?", (target_id,))
+    execute("UPDATE tasks SET assignee_id = NULL WHERE assignee_id = ?", (target_id,))
+    execute("UPDATE tasks SET closed_by = NULL WHERE closed_by = ?", (target_id,))
+    execute(
+        "UPDATE tasks SET contact_person_user_id = NULL WHERE contact_person_user_id = ?",
+        (target_id,),
+    )
+    execute("DELETE FROM task_comments WHERE user_id = ?", (target_id,))
+    execute("DELETE FROM calendar_events WHERE user_id = ?", (target_id,))
+    execute("DELETE FROM users WHERE id = ?", (target_id,))
+
+    for task_id in affected_task_ids:
+        sync_task_primary_assignee(task_id)
+
+
 def user_count() -> int:
     row = query_one("SELECT COUNT(*) AS cnt FROM users")
     return int(row["cnt"])
@@ -2349,7 +2497,7 @@ def onboarding():
             if str(target["id"]) == str(user["id"]):
                 flash("Du kannst deinen eigenen Account nicht löschen.", "error")
                 return redirect(url_for("onboarding", tab=active_tab))
-            execute("DELETE FROM users WHERE id = ?", (target_id,))
+            delete_user_with_references(target["id"], user["id"])
             flash(f"Benutzer \"{target['username']}\" wurde entfernt.", "success")
             return redirect(url_for("onboarding", tab=active_tab))
 
@@ -4702,28 +4850,7 @@ def manage_users():
                     flash("Der letzte Admin kann nicht gelöscht werden.", "error")
                     return redirect(url_for("manage_users"))
 
-            assigned_rows = query_all(
-                "SELECT DISTINCT task_id FROM task_assignees WHERE user_id = ?",
-                (target_id,),
-            )
-            affected_task_ids = {row["task_id"] for row in assigned_rows}
-
-            # tasks.created_by uses ON DELETE RESTRICT, so hand over ownership first.
-            execute(
-                "UPDATE tasks SET created_by = ? WHERE created_by = ?",
-                (current["id"], target_id),
-            )
-
-            execute("DELETE FROM task_assignees WHERE user_id = ?", (target_id,))
-            execute("DELETE FROM task_contact_persons WHERE user_id = ?", (target_id,))
-            execute("UPDATE tasks SET assignee_id = NULL WHERE assignee_id = ?", (target_id,))
-            execute("UPDATE tasks SET closed_by = NULL WHERE closed_by = ?", (target_id,))
-            execute("DELETE FROM task_comments WHERE user_id = ?", (target_id,))
-            execute("DELETE FROM calendar_events WHERE user_id = ?", (target_id,))
-            execute("DELETE FROM users WHERE id = ?", (target_id,))
-
-            for task_id in affected_task_ids:
-                sync_task_primary_assignee(task_id)
+            delete_user_with_references(target["id"], current["id"])
 
             flash("Benutzer wurde entfernt und aus allen Tasks ausgetragen.", "success")
             return redirect(url_for("manage_users"))
